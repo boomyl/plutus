@@ -1,6 +1,5 @@
 module Simulation where
 
-import Auth (AuthRole(..), authStatusAuthRole)
 import Control.Alternative (map, void, when, (<|>))
 import Control.Monad.Except (ExceptT, runExceptT)
 import Control.Monad.Reader (runReaderT)
@@ -28,21 +27,16 @@ import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import FileEvents (readFileFromDragEvent)
 import FileEvents as FileEvents
-import Gist (Gist)
-import Gists (GistAction(..), idPublishGist)
 import Halogen (HalogenM, query)
-import Halogen.Classes (aHorizontal, active, activeClasses, blocklyIcon, bold, closeDrawerIcon, codeEditor, expanded, infoIcon, jFlexStart, noMargins, panelSubHeader, panelSubHeaderMain, panelSubHeaderSide, plusBtn, pointer, sidebarComposer, smallBtn, spaceLeft, spanText, textSecondaryColor, uppercase)
+import Halogen.Classes (aHorizontal, activeClasses, blocklyIcon, bold, closeDrawerIcon, codeEditor, expanded, infoIcon, jFlexStart, noMargins, panelSubHeader, panelSubHeaderMain, panelSubHeaderSide, plusBtn, pointer, sidebarComposer, smallBtn, spaceLeft, spanText, textSecondaryColor, uppercase)
 import Halogen.Classes as Classes
-import Halogen.HTML (ClassName(..), ComponentHTML, HTML, a, article, aside, b_, br_, button, div, em_, h6, h6_, img, input, label, li, option, p, p_, section, select, slot, small, span, strong_, text, ul)
-import Halogen.HTML.Events (onClick, onSelectedIndexChange, onValueChange, onValueInput)
-import Halogen.HTML.Properties (InputType(..), alt, class_, classes, disabled, enabled, href, placeholder, src, type_, value)
+import Halogen.HTML (ClassName(..), ComponentHTML, HTML, a, article, aside, b_, br_, button, div, em_, h6, h6_, img, input, li, option, p, p_, section, select, slot, small, span, strong_, text, ul)
+import Halogen.HTML.Events (onClick, onSelectedIndexChange, onValueChange)
+import Halogen.HTML.Properties (InputType(..), alt, class_, classes, enabled, placeholder, src, type_, value)
 import Halogen.HTML.Properties as HTML
 import Halogen.Monaco (Message(..), Query(..)) as Monaco
 import Halogen.Monaco (monacoComponent)
-import Halogen.SVG (Box(..), Length(..), Linecap(..), RGB(..), circle, clazz, cx, cy, d, fill, height, path, r, strokeLinecap, strokeWidth, svg, viewBox)
-import Halogen.SVG as SVG
 import Help (HelpContext(..), toHTML)
-import Icons (Icon(..), icon)
 import LocalStorage as LocalStorage
 import Marlowe (SPParams_)
 import Marlowe as Server
@@ -62,7 +56,7 @@ import Servant.PureScript.Ajax (AjaxError)
 import Servant.PureScript.Settings (SPSettings_)
 import Simulation.BottomPanel (bottomPanel)
 import Simulation.State (ActionInput(..), ActionInputId, _editorErrors, _editorWarnings, _moveToAction, _pendingInputs, _possibleActions, _slot, _state, applyInput, emptyMarloweState, hasHistory, mapPartiesActionInput, moveToSignificantSlot, moveToSlot, nextSignificantSlot, otherActionsParty, updateContractInState, updateMarloweState)
-import Simulation.Types (Action(..), AnalysisState(..), State, WebData, _activeDemo, _analysisState, _authStatus, _bottomPanelView, _currentContract, _currentMarloweState, _editorKeybindings, _gistUrl, _createGistResult, _loadGistResult, _helpContext, _marloweState, _oldContract, _selectedHole, _showBottomPanel, _showErrorDetail, _showRightPanel, isContractValid)
+import Simulation.Types (Action(..), AnalysisState(..), State, WebData, _activeDemo, _analysisState, _bottomPanelView, _currentContract, _currentMarloweState, _editorKeybindings, _helpContext, _marloweState, _oldContract, _selectedHole, _showBottomPanel, _showErrorDetail, _showRightPanel, isContractValid)
 import StaticData (marloweBufferLocalStorageKey)
 import StaticData as StaticData
 import Text.Pretty (genericPretty, pretty)
@@ -80,9 +74,7 @@ handleAction ::
   MonadEffect m =>
   MonadAff m =>
   SPSettings_ SPParams_ -> Action -> HalogenM State Action ChildSlots Void m Unit
-handleAction settings Init = do
-  checkAuthStatus settings
-  editorSetTheme
+handleAction settings Init = editorSetTheme
 
 handleAction _ (HandleEditorMessage (Monaco.TextChanged "")) = do
   assign _marloweState $ NEL.singleton (emptyMarloweState zero)
@@ -209,11 +201,6 @@ handleAction _ (ChangeHelpContext help) = do
   assign _helpContext help
   scrollHelpPanel
 
-handleAction settings CheckAuthStatus = do
-  checkAuthStatus settings
-
-handleAction settings (GistAction subEvent) = pure unit
-
 handleAction _ (ShowRightPanel val) = assign _showRightPanel val
 
 handleAction _ (ShowBottomPanel val) = do
@@ -245,17 +232,13 @@ handleAction settings AnalyseReachabilityContract = do
       newReachabilityAnalysisState <- startReachabilityAnalysis settings contract currState
       assign _analysisState (ReachabilityAnalysis newReachabilityAnalysisState)
 
+handleAction _ Save = pure unit
+
 getCurrentContract :: forall m. HalogenM State Action ChildSlots Void m String
 getCurrentContract = do
   oldContract <- use _oldContract
   currContract <- editorGetValue
   pure $ fromMaybe mempty $ oldContract <|> currContract
-
-checkAuthStatus :: forall m. MonadAff m => SPSettings_ SPParams_ -> HalogenM State Action ChildSlots Void m Unit
-checkAuthStatus settings = do
-  assign _authStatus Loading
-  authResult <- runAjax $ runReaderT Server.getApiOauthStatus settings
-  assign _authStatus authResult
 
 runAjax ::
   forall m a.
@@ -376,7 +359,6 @@ render state =
         , div [ classes [ panelSubHeaderSide, expanded (state ^. _showRightPanel) ] ]
             [ a [ classes [ (ClassName "drawer-icon-click") ], onClick $ const $ Just $ ShowRightPanel (not showRightPanel) ]
                 [ img [ src closeDrawerIcon, class_ (ClassName "drawer-icon") ] ]
-            , authButton state
             ]
         ]
     , section [ class_ (ClassName "code-panel") ]
@@ -659,141 +641,3 @@ renderDeposit accountOwner party tok money =
   , spanText " as "
   , b_ [ spanText (show party) ]
   ]
-
-authButton :: forall p. State -> HTML p Action
-authButton state =
-  let
-    authStatus = state ^. (_authStatus <<< to (map (view authStatusAuthRole)))
-  in
-    case authStatus of
-      Failure _ ->
-        button
-          [ idPublishGist
-          , classes []
-          ]
-          [ text "Failed to login" ]
-      Success Anonymous ->
-        div [ class_ (ClassName "auth-button-container") ]
-          [ a
-              [ idPublishGist
-              , classes [ ClassName "auth-button" ]
-              , href "/api/oauth/github"
-              ]
-              [ text "Save to GitHub"
-              ]
-          ]
-      Success GithubUser -> gistSection state
-      Loading ->
-        button
-          [ idPublishGist
-          , classes []
-          , disabled true
-          ]
-          [ icon Spinner ]
-      NotAsked ->
-        button
-          [ idPublishGist
-          , classes []
-          , disabled true
-          ]
-          [ icon Spinner ]
-
-spinner :: forall p. HTML p Action
-spinner =
-  svg [ clazz (ClassName "spinner"), SVG.width (Px 65), height (Px 65), viewBox (Box { x: 0, y: 0, width: 66, height: 66 }) ]
-    [ circle [ clazz (ClassName "path"), fill SVG.None, strokeWidth 6, strokeLinecap Round, cx (Length 33.0), cy (Length 33.0), r (Length 30.0) ] [] ]
-
-arrowDown :: forall p. HTML p Action
-arrowDown =
-  svg [ clazz (ClassName "arrow-down"), SVG.width (Px 20), height (Px 20), viewBox (Box { x: 0, y: 0, width: 24, height: 24 }) ]
-    [ path [ fill (Hex "#832dc4"), d "M19.92,12.08L12,20L4.08,12.08L5.5,10.67L11,16.17V2H13V16.17L18.5,10.66L19.92,12.08M12,20H2V22H22V20H12Z" ] [] ]
-
-arrowUp :: forall p. HTML p Action
-arrowUp =
-  svg [ clazz (ClassName "arrow-up"), SVG.width (Px 20), height (Px 20), viewBox (Box { x: 0, y: 0, width: 24, height: 24 }) ]
-    [ path [ fill (Hex "#832dc4"), d "M4.08,11.92L12,4L19.92,11.92L18.5,13.33L13,7.83V22H11V7.83L5.5,13.33L4.08,11.92M12,4H22V2H2V4H12Z" ] [] ]
-
-errorIcon :: forall p. HTML p Action
-errorIcon =
-  svg [ clazz (ClassName "error-icon"), SVG.width (Px 20), height (Px 20), viewBox (Box { x: 0, y: 0, width: 24, height: 24 }) ]
-    [ path [ fill (Hex "#ff0000"), d "M13,13H11V7H13M12,17.3A1.3,1.3 0 0,1 10.7,16A1.3,1.3 0 0,1 12,14.7A1.3,1.3 0 0,1 13.3,16A1.3,1.3 0 0,1 12,17.3M15.73,3H8.27L3,8.27V15.73L8.27,21H15.73L21,15.73V8.27L15.73,3Z" ] [] ]
-
-gistButtonIcon :: forall p. HTML p Action -> Either String (RemoteData AjaxError Gist) -> HTML p Action
-gistButtonIcon _ (Left _) = errorIcon
-
-gistButtonIcon _ (Right (Failure _)) = errorIcon
-
-gistButtonIcon arrow (Right (Success _)) = arrow
-
-gistButtonIcon _ (Right Loading) = spinner
-
-gistButtonIcon arrow (Right NotAsked) = arrow
-
-gistInput :: forall p. State -> Either String (RemoteData AjaxError Gist) -> HTML p Action
-gistInput state (Left _) =
-  input
-    [ HTML.type_ InputText
-    , classes [ ClassName "form-control", ClassName "py-0", ClassName "error" ]
-    , HTML.id_ "github-input"
-    , placeholder "Gist ID"
-    , value (state ^. _gistUrl <<< to (fromMaybe ""))
-    , onValueInput $ Just <<< GistAction <<< SetGistUrl
-    ]
-
-gistInput state (Right (Failure _)) =
-  input
-    [ HTML.type_ InputText
-    , classes [ ClassName "form-control", ClassName "py-0", ClassName "error" ]
-    , HTML.id_ "github-input"
-    , placeholder "Gist ID"
-    , value (state ^. _gistUrl <<< to (fromMaybe ""))
-    , onValueInput $ Just <<< GistAction <<< SetGistUrl
-    ]
-
-gistInput state _ =
-  input
-    [ HTML.type_ InputText
-    , classes [ ClassName "form-control", ClassName "py-0" ]
-    , HTML.id_ "github-input"
-    , placeholder "Gist ID"
-    , value (state ^. _gistUrl <<< to (fromMaybe ""))
-    , onValueInput $ Just <<< GistAction <<< SetGistUrl
-    ]
-
-gistSection :: forall p. State -> HTML p Action
-gistSection state =
-  div [ classes [ ClassName "github-gist-panel", aHorizontal, expanded (state ^. _showRightPanel) ] ]
-    [ div [ classes [ ClassName "input-group-text", ClassName "upload-btn", ClassName "tooltip" ], onClick $ const $ Just $ GistAction PublishGist ]
-        [ span [ class_ (ClassName "tooltiptext") ] [ publishTooltip publishStatus ]
-        , gistButtonIcon arrowUp publishStatus
-        ]
-    , label [ classes [ ClassName "sr-only", active ], HTML.for "github-input" ] [ text "Enter Github Gist" ]
-    , div [ classes (map ClassName [ "input-group", "mb-2", "mr-sm-2" ]) ]
-        [ gistInput state loadStatus
-        , div [ class_ (ClassName "input-group-append") ]
-            [ div
-                [ classes [ ClassName "input-group-text", ClassName "download-btn", ClassName "tooltip" ]
-                , onClick $ const $ Just $ GistAction LoadGist
-                ]
-                [ span [ class_ (ClassName "tooltiptext") ] [ loadTooltip loadStatus ]
-                , gistButtonIcon arrowDown loadStatus
-                ]
-            ]
-        ]
-    ]
-  where
-  publishStatus = state ^. _createGistResult <<< to Right
-
-  loadStatus = state ^. _loadGistResult
-
-  publishTooltip (Left _) = text "Failed to publish gist"
-
-  publishTooltip (Right (Failure _)) = text "Failed to publish gist"
-
-  publishTooltip _ = text "Publish To Github Gist"
-
-  loadTooltip (Left e) = text "Failed to load gist"
-
-  loadTooltip (Right (Failure _)) = text "Failed to load gist"
-
-  loadTooltip _ = text "Load From Github Gist"

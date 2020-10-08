@@ -72,7 +72,7 @@ import Simulation.Types as ST
 import StaticData (bufferLocalStorageKey, jsBufferLocalStorageKey, marloweBufferLocalStorageKey, showHomePageLocalStorageKey)
 import StaticData as StaticData
 import Text.Pretty (pretty)
-import Types (Action(..), ChildSlots, FrontendState(FrontendState), JSCompilationState(..), Query(..), View(..), WebData, _activeJSDemo, _actusBlocklySlot, _blocklySlot, _createGistResult, _gistUrl, _haskellEditorSlot, _haskellState, _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _loadGistResult, _newProject, _projects, _showBottomPanel, _showHomePage, _simulationState, _view, _walletSlot)
+import Types (Action(..), ChildSlots, FrontendState(FrontendState), JSCompilationState(..), Query(..), View(..), WebData, _activeJSDemo, _actusBlocklySlot, _authStatus, _blocklySlot, _createGistResult, _gistUrl, _haskellEditorSlot, _haskellState, _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _loadGistResult, _newProject, _projects, _showBottomPanel, _showHomePage, _simulationState, _view, _walletSlot)
 import Wallet as Wallet
 
 initialState :: FrontendState
@@ -90,6 +90,7 @@ initialState =
     , showHomePage: true
     , projects: Projects.emptyState
     , newProject: NewProject.emptyState
+    , authStatus: NotAsked
     , gistUrl: Nothing
     , createGistResult: NotAsked
     , loadGistResult: Right NotAsked
@@ -171,9 +172,8 @@ handleRoute ::
   SPSettings_ SPParams_ ->
   Route -> HalogenM FrontendState Action ChildSlots Void m Unit
 handleRoute settings { gistId: (Just gistId), subroute } = do
-  toSimulation do
-    Simulation.handleAction settings (ST.GistAction (SetGistUrl (unwrap gistId)))
-    Simulation.handleAction settings (ST.GistAction LoadGist)
+  handleAction settings (GistAction (SetGistUrl (unwrap gistId)))
+  handleAction settings (GistAction LoadGist)
   handleSubRoute settings subroute
 
 handleRoute settings { subroute } = handleSubRoute settings subroute
@@ -209,6 +209,7 @@ handleAction settings Init = do
     Right route -> handleRoute settings route
     Left _ -> handleRoute settings { subroute, gistId: Nothing }
   toSimulation $ Simulation.handleAction settings ST.Init
+  checkAuthStatus settings
 
 handleAction settings (ShowHomePageInFuture b) = do
   liftEffect $ LocalStorage.setItem showHomePageLocalStorageKey (show b)
@@ -250,7 +251,7 @@ handleAction s (SimulationAction action) = do
       mSource <- Simulation.editorGetValue
       for_ mSource \source -> void $ query _blocklySlot unit (Blockly.SetCode source unit)
       selectView BlocklyEditor
-    ST.GistAction gistAction -> handleGistAction s gistAction
+    ST.Save -> pure unit
     _ -> pure unit
 
 handleAction _ (HandleWalletMessage Wallet.SendContractToWallet) = do
@@ -355,13 +356,18 @@ handleAction s (ProjectsAction action) = toProjects $ Projects.handleAction s ac
 
 handleAction s (NewProjectAction action@(NewProject.CreateProject lang)) = do
   handleGistAction s PublishGist
-  res <- peruse (_simulationState <<< ST._createGistResult <<< _Success)
+  res <- peruse (_createGistResult <<< _Success)
   case res of
     Just _ -> traverse_ selectView $ selectLanguageView lang
     Nothing -> assign (_newProject <<< NewProject._error) (Just "Could not create new project")
   toNewProject $ NewProject.handleAction s action
 
 handleAction s (NewProjectAction action) = toNewProject $ NewProject.handleAction s action
+
+handleAction settings CheckAuthStatus = do
+  checkAuthStatus settings
+
+handleAction settings (GistAction subEvent) = pure unit
 
 selectLanguageView :: Lang -> Maybe View
 selectLanguageView Haskell = Just HaskellEditor
@@ -389,6 +395,12 @@ runAjax ::
 runAjax action = RemoteData.fromEither <$> runExceptT action
 
 ------------------------------------------------------------
+checkAuthStatus :: forall m. MonadAff m => SPSettings_ SPParams_ -> HalogenM FrontendState Action ChildSlots Void m Unit
+checkAuthStatus settings = do
+  assign _authStatus Loading
+  authResult <- runAjax $ runReaderT Server.getApiOauthStatus settings
+  assign _authStatus authResult
+
 handleGistAction ::
   forall m.
   MonadAff m =>
@@ -413,31 +425,22 @@ handleGistAction settings PublishGist = do
     newGist = mkNewGist description files
   void
     $ runMaybeT do
-        -- TODO: gist state is duplicated until SCP-1256
         mGist <- use _createGistResult
         assign _createGistResult Loading
-        assign (_simulationState <<< ST._createGistResult) Loading
         newResult <-
           lift
             $ case preview (_Success <<< gistId) mGist of
                 Nothing -> runAjax $ flip runReaderT settings $ Server.postApiGists newGist
                 Just gistId -> runAjax $ flip runReaderT settings $ Server.patchApiGistsByGistId newGist gistId
         assign _createGistResult newResult
-        assign (_simulationState <<< ST._createGistResult) newResult
         gistId <- hoistMaybe $ preview (_Success <<< gistId <<< _GistId) newResult
         assign _gistUrl (Just gistId)
         assign _loadGistResult (Right NotAsked)
-        assign (_simulationState <<< ST._gistUrl) (Just gistId)
-        assign (_simulationState <<< ST._loadGistResult) (Right NotAsked)
 
 handleGistAction _ (SetGistUrl newGistUrl) = do
   assign _createGistResult NotAsked
   assign _loadGistResult (Right NotAsked)
   assign _gistUrl (Just newGistUrl)
-  -- TODO: gist state is duplicated until SCP-1256
-  assign (_simulationState <<< ST._createGistResult) NotAsked
-  assign (_simulationState <<< ST._loadGistResult) (Right NotAsked)
-  assign (_simulationState <<< ST._gistUrl) (Just newGistUrl)
 
 handleGistAction settings LoadGist = do
   res <-
@@ -445,18 +448,13 @@ handleGistAction settings LoadGist = do
       $ do
           mGistId <- ExceptT $ note "Gist Url not set." <$> use _gistUrl
           eGistId <- except $ Gists.parseGistUrl mGistId
-          --
-          -- TODO: gist state is duplicated until SCP-1256
           assign _loadGistResult $ Right Loading
-          assign (_simulationState <<< ST._loadGistResult) $ Right Loading
           aGist <- lift $ runAjax $ flip runReaderT settings $ Server.getApiGistsByGistId eGistId
           assign _loadGistResult $ Right aGist
-          assign (_simulationState <<< ST._loadGistResult) $ Right aGist
           gist <- ExceptT $ pure $ toEither (Left "Gist not loaded.") $ lmap errorToString aGist
           lift $ loadGist gist
           pure aGist
   assign _loadGistResult res
-  assign (_simulationState <<< ST._loadGistResult) res
   where
   toEither :: forall e a. Either e a -> RemoteData e a -> Either e a
   toEither _ (Success a) = Right a
@@ -491,7 +489,6 @@ loadGist gist = do
   for_ haskell \s -> liftEffect $ LocalStorage.setItem bufferLocalStorageKey s
   for_ javascript \s -> liftEffect $ LocalStorage.setItem jsBufferLocalStorageKey s
   for_ marlowe \s -> liftEffect $ LocalStorage.setItem marloweBufferLocalStorageKey s
-  assign (_simulationState <<< ST._gistUrl) gistUrl
   assign _gistUrl gistUrl
   toSimulation $ Simulation.editorSetValue $ fromMaybe mempty marlowe
   assign (_simulationState <<< ST._oldContract) oldSimulation

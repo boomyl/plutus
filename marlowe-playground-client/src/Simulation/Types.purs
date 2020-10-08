@@ -4,9 +4,7 @@ module Simulation.Types where
 import Prelude
 import Analytics (class IsEvent, Event)
 import Analytics as A
-import Auth (AuthStatus)
 import Data.Array as Array
-import Data.Either (Either(..))
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
 import Data.Lens (Lens', to, view)
@@ -18,15 +16,13 @@ import Data.List.Types (NonEmptyList)
 import Data.Maybe (Maybe(..), isJust)
 import Data.Symbol (SProxy(..))
 import Data.Tuple.Nested (type (/\))
-import Gist (Gist)
-import Gists (GistAction)
 import Halogen.Monaco (KeyBindings(..))
 import Halogen.Monaco as Monaco
 import Help (HelpContext(..))
 import Marlowe.Semantics (Bound, ChoiceId, ChosenNum, Contract, Input, Slot)
 import Marlowe.Semantics as S
 import Marlowe.Symbolic.Types.Response (Result)
-import Network.RemoteData (RemoteData(..))
+import Network.RemoteData (RemoteData)
 import Servant.PureScript.Ajax (AjaxError)
 import Simulation.State (MarloweState, _contract, _editorErrors, emptyMarloweState)
 import Text.Parsing.StringParser (Pos)
@@ -79,11 +75,6 @@ type State
     , activeDemo :: String
     , helpContext :: HelpContext
     , editorKeybindings :: KeyBindings
-    , authStatus :: WebData AuthStatus
-    -- TODO: gist state is duplicated until SCP-1256, these 3 fields should be removed as part of that
-    , gistUrl :: Maybe String
-    , createGistResult :: WebData Gist
-    , loadGistResult :: Either String (WebData Gist)
     , showBottomPanel :: Boolean
     , showErrorDetail :: Boolean
     , bottomPanelView :: BottomPanelView
@@ -113,18 +104,6 @@ _helpContext = prop (SProxy :: SProxy "helpContext")
 _editorKeybindings :: Lens' State KeyBindings
 _editorKeybindings = prop (SProxy :: SProxy "editorKeybindings")
 
-_authStatus :: Lens' State (WebData AuthStatus)
-_authStatus = prop (SProxy :: SProxy "authStatus")
-
-_gistUrl :: Lens' State (Maybe String)
-_gistUrl = prop (SProxy :: SProxy "gistUrl")
-
-_createGistResult :: Lens' State (WebData Gist)
-_createGistResult = prop (SProxy :: SProxy "createGistResult")
-
-_loadGistResult :: Lens' State (Either String (WebData Gist))
-_loadGistResult = prop (SProxy :: SProxy "loadGistResult")
-
 _showBottomPanel :: Lens' State Boolean
 _showBottomPanel = prop (SProxy :: SProxy "showBottomPanel")
 
@@ -150,10 +129,6 @@ mkState =
   , activeDemo: mempty
   , helpContext: MarloweHelp
   , editorKeybindings: DefaultBindings
-  , authStatus: NotAsked
-  , gistUrl: Nothing
-  , createGistResult: NotAsked
-  , loadGistResult: Right NotAsked
   , showBottomPanel: true
   , showErrorDetail: false
   , bottomPanelView: CurrentStateView
@@ -177,9 +152,6 @@ data Action
   | SelectEditorKeyBindings KeyBindings
   | LoadScript String
   | SetEditorText String
-  -- Gist support.
-  | CheckAuthStatus
-  | GistAction GistAction
   -- marlowe actions
   | MoveSlot Slot
   | SetSlot Slot
@@ -201,6 +173,7 @@ data Action
   -- websocket
   | AnalyseContract
   | AnalyseReachabilityContract
+  | Save
 
 defaultEvent :: String -> Event
 defaultEvent s = A.defaultEvent $ "Simulation." <> s
@@ -212,7 +185,6 @@ instance isEventAction :: IsEvent Action where
   toEvent (HandleDropEvent _) = Just $ defaultEvent "HandleDropEvent"
   toEvent (MoveToPosition _ _) = Just $ defaultEvent "MoveToPosition"
   toEvent (SelectEditorKeyBindings _) = Just $ defaultEvent "SelectEditorKeyBindings"
-  toEvent CheckAuthStatus = Just $ defaultEvent "CheckAuthStatus"
   toEvent (LoadScript script) = Just $ (defaultEvent "LoadScript") { label = Just script }
   toEvent (SetEditorText _) = Just $ defaultEvent "SetEditorText"
   toEvent (MoveSlot _) = Just $ defaultEvent "MoveSlot"
@@ -226,13 +198,13 @@ instance isEventAction :: IsEvent Action where
   toEvent (SelectHole _) = Just $ defaultEvent "SelectHole"
   toEvent (ChangeSimulationView view) = Just $ (defaultEvent "ChangeSimulationView") { label = Just $ show view }
   toEvent (ChangeHelpContext help) = Just $ (defaultEvent "ChangeHelpContext") { label = Just $ show help }
-  toEvent (GistAction _) = Just $ defaultEvent "GistAction"
   toEvent (ShowRightPanel _) = Just $ defaultEvent "ShowRightPanel"
   toEvent (ShowBottomPanel _) = Just $ defaultEvent "ShowBottomPanel"
   toEvent (ShowErrorDetail _) = Just $ defaultEvent "ShowErrorDetail"
   toEvent SetBlocklyCode = Just $ defaultEvent "SetBlocklyCode"
   toEvent AnalyseContract = Just $ defaultEvent "AnalyseContract"
   toEvent AnalyseReachabilityContract = Just $ defaultEvent "AnalyseReachabilityContract"
+  toEvent Save = Just $ defaultEvent "Save"
 
 data Query a
   = WebsocketResponse (RemoteData String Result) a

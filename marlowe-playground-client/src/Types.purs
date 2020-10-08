@@ -1,6 +1,7 @@
 module Types where
 
 import Analytics (class IsEvent, defaultEvent, toEvent)
+import Auth (AuthStatus)
 import Blockly.Types (BlocklyState)
 import Data.Either (Either)
 import Data.Generic.Rep (class Generic)
@@ -12,6 +13,7 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.Symbol (SProxy(..))
 import Gist (Gist)
+import Gists (GistAction)
 import Halogen (AttrName(..), ClassName)
 import Halogen as H
 import Halogen.ActusBlockly as AB
@@ -59,6 +61,9 @@ data Action
   | HandleWalletMessage Wallet.Message
   | ProjectsAction Projects.Action
   | NewProjectAction NewProject.Action
+  -- Gist support.
+  | CheckAuthStatus
+  | GistAction GistAction
 
 -- | Here we decide which top-level queries to track as GA events, and
 -- how to classify them.
@@ -80,6 +85,8 @@ instance actionIsEvent :: IsEvent Action where
   toEvent SendResultJSToSimulator = Just $ defaultEvent "SendResultJSToSimulator"
   toEvent (ProjectsAction action) = toEvent action
   toEvent (NewProjectAction action) = toEvent action
+  toEvent CheckAuthStatus = Just $ defaultEvent "CheckAuthStatus"
+  toEvent (GistAction _) = Just $ defaultEvent "GistAction"
 
 ------------------------------------------------------------
 type ChildSlots
@@ -152,6 +159,7 @@ newtype FrontendState
   , showHomePage :: Boolean
   , projects :: Projects.State
   , newProject :: NewProject.State
+  , authStatus :: WebData AuthStatus
   , gistUrl :: Maybe String
   , createGistResult :: WebData Gist
   , loadGistResult :: Either String (WebData Gist)
@@ -200,6 +208,9 @@ _projects = _Newtype <<< prop (SProxy :: SProxy "projects")
 
 _newProject :: Lens' FrontendState NewProject.State
 _newProject = _Newtype <<< prop (SProxy :: SProxy "newProject")
+
+_authStatus :: Lens' FrontendState (WebData AuthStatus)
+_authStatus = _Newtype <<< prop (SProxy :: SProxy "authStatus")
 
 _gistUrl :: Lens' FrontendState (Maybe String)
 _gistUrl = _Newtype <<< prop (SProxy :: SProxy "gistUrl")
