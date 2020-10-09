@@ -163,6 +163,7 @@ newtype FrontendState
   , gistUrl :: Maybe String
   , createGistResult :: WebData Gist
   , loadGistResult :: Either String (WebData Gist)
+  , projectName :: String
   }
 
 derive instance newtypeFrontendState :: Newtype FrontendState _
@@ -220,6 +221,9 @@ _createGistResult = _Newtype <<< prop (SProxy :: SProxy "createGistResult")
 
 _loadGistResult :: Lens' FrontendState (Either String (WebData Gist))
 _loadGistResult = _Newtype <<< prop (SProxy :: SProxy "loadGistResult")
+
+_projectName :: Lens' FrontendState String
+_projectName = _Newtype <<< prop (SProxy :: SProxy "projectName")
 
 -- editable
 _timestamp ::

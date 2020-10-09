@@ -28,15 +28,7 @@ module Gist
 
 import           Auth.Types        (Token, TokenProvider (Github))
 import           Data.Aeson        (FromJSON, GFromJSON, ToJSON, Value, Zero, genericParseJSON, object, parseJSON,
-<<<<<<< HEAD
-<<<<<<< HEAD
                                     toJSON, withObject, (.!=), (.:), (.:?), (.=))
-=======
-                                    toJSON, withObject, (.:), (.:?), (.=), (.!=))
->>>>>>> Save entire workspace when saving to gist
-=======
-                                    toJSON, withObject, (.!=), (.:), (.:?), (.=))
->>>>>>> add a comment
 import           Data.Aeson.Casing (aesonPrefix, snakeCase)
 import           Data.Aeson.Types  (Parser)
 import           Data.Bifunctor    (bimap)

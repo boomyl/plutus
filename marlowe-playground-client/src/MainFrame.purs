@@ -16,6 +16,7 @@ import Data.Newtype (unwrap)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Class (class MonadEffect)
 import Gist (Gist, _GistId, gistDescription, gistId)
+import GistButtons as GistButtons
 import Gists (GistAction(..))
 import Gists as Gists
 import Halogen (Component, ComponentHTML, get, liftEffect, query, subscribe)
@@ -26,7 +27,7 @@ import Halogen.Blockly (BlocklyMessage(..), blockly)
 import Halogen.Blockly as Blockly
 import Halogen.Classes (aCenter, aHorizontal, active, flexCol, fullHeight, hide, iohkLogo, noMargins, spaceLeft, spaceRight, tabIcon, tabLink, uppercase)
 import Halogen.Extra (mapSubmodule, renderSubmodule)
-import Halogen.HTML (ClassName(ClassName), HTML, a, div, h1, header, img, main, nav, section, slot, text)
+import Halogen.HTML (ClassName(ClassName), HTML, a, div, h1, h2_, header, img, main, nav, section, slot, text)
 import Halogen.HTML.Events (onClick)
 import Halogen.HTML.Properties (class_, classes, href, id_, src, target)
 import Halogen.Monaco (KeyBindings(DefaultBindings))
@@ -53,7 +54,7 @@ import Marlowe.Parser (parseContract)
 import Network.RemoteData (RemoteData(..), _Success)
 import Network.RemoteData as RemoteData
 import NewProject (handleAction, render) as NewProject
-import NewProject.Types (Action(..), State, _projectName, emptyState, _error) as NewProject
+import NewProject.Types (Action(..), State, _error, _projectName, emptyState) as NewProject
 import Prelude (class Functor, Unit, Void, bind, const, discard, eq, flip, identity, mempty, negate, pure, show, unit, void, ($), (/=), (<$>), (<<<), (<>), (>))
 import Projects (handleAction, render) as Projects
 import Projects.Types (Action(..), State, _projects, emptyState) as Projects
@@ -72,7 +73,7 @@ import Simulation.Types as ST
 import StaticData (bufferLocalStorageKey, jsBufferLocalStorageKey, marloweBufferLocalStorageKey, showHomePageLocalStorageKey)
 import StaticData as StaticData
 import Text.Pretty (pretty)
-import Types (Action(..), ChildSlots, FrontendState(FrontendState), JSCompilationState(..), Query(..), View(..), WebData, _activeJSDemo, _actusBlocklySlot, _authStatus, _blocklySlot, _createGistResult, _gistUrl, _haskellEditorSlot, _haskellState, _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _loadGistResult, _newProject, _projects, _showBottomPanel, _showHomePage, _simulationState, _view, _walletSlot)
+import Types (Action(..), ChildSlots, FrontendState(FrontendState), JSCompilationState(..), Query(..), View(..), WebData, _activeJSDemo, _actusBlocklySlot, _authStatus, _blocklySlot, _createGistResult, _gistUrl, _haskellEditorSlot, _haskellState, _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _loadGistResult, _newProject, _projectName, _projects, _showBottomPanel, _showHomePage, _simulationState, _view, _walletSlot)
 import Wallet as Wallet
 
 initialState :: FrontendState
@@ -94,6 +95,7 @@ initialState =
     , gistUrl: Nothing
     , createGistResult: NotAsked
     , loadGistResult: Right NotAsked
+    , projectName: "Untitled Project"
     }
 
 ------------------------------------------------------------
@@ -355,11 +357,16 @@ handleAction s (ProjectsAction action@(Projects.LoadProject lang gistId)) = do
 handleAction s (ProjectsAction action) = toProjects $ Projects.handleAction s action
 
 handleAction s (NewProjectAction action@(NewProject.CreateProject lang)) = do
+  currentProject <- use _projectName
+  description <- use (_newProject <<< NewProject._projectName)
+  assign _projectName description
   handleGistAction s PublishGist
   res <- peruse (_createGistResult <<< _Success)
   case res of
     Just _ -> traverse_ selectView $ selectLanguageView lang
-    Nothing -> assign (_newProject <<< NewProject._error) (Just "Could not create new project")
+    Nothing -> do
+      assign (_newProject <<< NewProject._error) (Just "Could not create new project")
+      assign _projectName currentProject
   toNewProject $ NewProject.handleAction s action
 
 handleAction s (NewProjectAction action) = toNewProject $ NewProject.handleAction s action
@@ -367,7 +374,7 @@ handleAction s (NewProjectAction action) = toNewProject $ NewProject.handleActio
 handleAction settings CheckAuthStatus = do
   checkAuthStatus settings
 
-handleAction settings (GistAction subEvent) = pure unit
+handleAction settings (GistAction subEvent) = handleGistAction settings subEvent
 
 selectLanguageView :: Lang -> Maybe View
 selectLanguageView Haskell = Just HaskellEditor
@@ -407,7 +414,7 @@ handleGistAction ::
   MonadEffect m =>
   SPSettings_ SPParams_ -> GistAction -> HalogenM FrontendState Action ChildSlots Void m Unit
 handleGistAction settings PublishGist = do
-  description <- use (_newProject <<< NewProject._projectName)
+  description <- use _projectName
   let
     playground = "{}"
   simulation <- use (_simulationState <<< _marloweState)
@@ -490,6 +497,7 @@ loadGist gist = do
   for_ javascript \s -> liftEffect $ LocalStorage.setItem jsBufferLocalStorageKey s
   for_ marlowe \s -> liftEffect $ LocalStorage.setItem marloweBufferLocalStorageKey s
   assign _gistUrl gistUrl
+  assign _projectName description
   toSimulation $ Simulation.editorSetValue $ fromMaybe mempty marlowe
   assign (_simulationState <<< ST._oldContract) oldSimulation
   assign (_simulationState <<< ST._marloweState) simulation
@@ -545,7 +553,7 @@ render settings state =
     [ header [ classes [ noMargins, aHorizontal ] ]
         [ div [ class_ aHorizontal ]
             [ div [ class_ (ClassName "marlowe-logo") ]
-                [ svg [ SVG.width (SVG.Length 60.0), SVG.height (SVG.Length 41.628), SVG.viewBox (SVG.Box { x: 0, y: 0, width: 60, height: 42 }) ]
+                [ svg [ SVG.width (SVG.Length 50.0), SVG.height (SVG.Length 41.628), SVG.viewBox (SVG.Box { x: 0, y: 0, width: 60, height: 42 }) ]
                     [ defs []
                         [ linearGradient [ id_ "marlowe__linear-gradient", x1 (SVG.Length 0.5), x2 (SVG.Length 0.5), y2 (SVG.Length 1.0), gradientUnits ObjectBoundingBox ]
                             [ stop [ offset (SVG.Length 0.221), stopColour "#832dc4" ] []
@@ -569,6 +577,7 @@ render settings state =
             ]
         , a [ href "./tutorial/index.html", target "_blank", classes [] ] [ text "Tutorial" ]
         ]
+    , globalActions
     , main []
         [ nav [ id_ "panel-nav" ]
             [ div
@@ -658,3 +667,18 @@ render settings state =
   isActiveTab activeView = if isActiveView activeView then [ active ] else []
 
   tabContents activeView contents = if isActiveView activeView then div [ classes [ fullHeight ] ] contents else div [ classes [ hide ] ] contents
+
+  showGlobalActions = case state ^. _view of
+    HomePage -> false
+    Projects -> false
+    NewProject -> false
+    _ -> true
+
+  globalActions =
+    if showGlobalActions then
+      div [ class_ (ClassName "global-actions") ]
+        [ h2_ [ text (state ^. _projectName) ]
+        , GistButtons.authButton state
+        ]
+    else
+      text ""

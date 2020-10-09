@@ -4,20 +4,19 @@ import Prelude hiding (div)
 import Auth (AuthRole(..), authStatusAuthRole)
 import Data.Either (Either(..))
 import Data.Lens (to, view, (^.))
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..))
 import Gist (Gist)
 import Gists (GistAction(..), idPublishGist)
-import Halogen.Classes (aHorizontal, active)
-import Halogen.HTML (ClassName(..), HTML, a, button, div, input, label, span, text)
-import Halogen.HTML.Events (onClick, onValueInput)
-import Halogen.HTML.Properties (InputType(..), class_, classes, disabled, href, placeholder, value)
-import Halogen.HTML.Properties as HTML
+import Halogen.Classes (aHorizontal)
+import Halogen.HTML (ClassName(..), HTML, a, button, div, span, text)
+import Halogen.HTML.Events (onClick)
+import Halogen.HTML.Properties (class_, classes, disabled, href)
 import Halogen.SVG (Box(..), Length(..), Linecap(..), RGB(..), circle, clazz, cx, cy, d, fill, height, path, r, strokeLinecap, strokeWidth, svg, viewBox)
 import Halogen.SVG as SVG
 import Icons (Icon(..), icon)
 import Network.RemoteData (RemoteData(..))
 import Servant.PureScript.Ajax (AjaxError)
-import Types (Action(..), FrontendState, _authStatus, _createGistResult, _gistUrl, _loadGistResult)
+import Types (Action(..), FrontendState, _authStatus, _createGistResult)
 
 authButton :: forall p. FrontendState -> HTML p Action
 authButton state =
@@ -85,71 +84,18 @@ gistButtonIcon _ (Right Loading) = spinner
 
 gistButtonIcon arrow (Right NotAsked) = arrow
 
-gistInput :: forall p. FrontendState -> Either String (RemoteData AjaxError Gist) -> HTML p Action
-gistInput state (Left _) =
-  input
-    [ HTML.type_ InputText
-    , classes [ ClassName "form-control", ClassName "py-0", ClassName "error" ]
-    , HTML.id_ "github-input"
-    , placeholder "Gist ID"
-    , value (state ^. _gistUrl <<< to (fromMaybe ""))
-    , onValueInput $ Just <<< GistAction <<< SetGistUrl
-    ]
-
-gistInput state (Right (Failure _)) =
-  input
-    [ HTML.type_ InputText
-    , classes [ ClassName "form-control", ClassName "py-0", ClassName "error" ]
-    , HTML.id_ "github-input"
-    , placeholder "Gist ID"
-    , value (state ^. _gistUrl <<< to (fromMaybe ""))
-    , onValueInput $ Just <<< GistAction <<< SetGistUrl
-    ]
-
-gistInput state _ =
-  input
-    [ HTML.type_ InputText
-    , classes [ ClassName "form-control", ClassName "py-0" ]
-    , HTML.id_ "github-input"
-    , placeholder "Gist ID"
-    , value (state ^. _gistUrl <<< to (fromMaybe ""))
-    , onValueInput $ Just <<< GistAction <<< SetGistUrl
-    ]
-
 gistSection :: forall p. FrontendState -> HTML p Action
 gistSection state =
-  div [ classes [ ClassName "github-gist-panel", aHorizontal ] ]
-    [ div [ classes [ ClassName "input-group-text", ClassName "upload-btn", ClassName "tooltip" ], onClick $ const $ Just $ GistAction PublishGist ]
-        [ span [ class_ (ClassName "tooltiptext") ] [ publishTooltip publishStatus ]
-        , gistButtonIcon arrowUp publishStatus
-        ]
-    , label [ classes [ ClassName "sr-only", active ], HTML.for "github-input" ] [ text "Enter Github Gist" ]
-    , div [ classes (map ClassName [ "input-group", "mb-2", "mr-sm-2" ]) ]
-        [ gistInput state loadStatus
-        , div [ class_ (ClassName "input-group-append") ]
-            [ div
-                [ classes [ ClassName "input-group-text", ClassName "download-btn", ClassName "tooltip" ]
-                , onClick $ const $ Just $ GistAction LoadGist
-                ]
-                [ span [ class_ (ClassName "tooltiptext") ] [ loadTooltip loadStatus ]
-                , gistButtonIcon arrowDown loadStatus
-                ]
-            ]
-        ]
+  div [ classes [ ClassName "save-button-group" ] ]
+    [ button
+        [ onClick $ const $ Just $ GistAction PublishGist ]
+        [ text saveText ]
+    , span [ class_ (ClassName "error") ] [ text error ]
     ]
   where
-  publishStatus = state ^. _createGistResult <<< to Right
-
-  loadStatus = state ^. _loadGistResult
-
-  publishTooltip (Left _) = text "Failed to publish gist"
-
-  publishTooltip (Right (Failure _)) = text "Failed to publish gist"
-
-  publishTooltip _ = text "Publish To Github Gist"
-
-  loadTooltip (Left e) = text "Failed to load gist"
-
-  loadTooltip (Right (Failure _)) = text "Failed to load gist"
-
-  loadTooltip _ = text "Load From Github Gist"
+  error = case state ^. _createGistResult of
+    (Failure _) -> "Failed to save project"
+    _ -> ""
+  saveText = case state ^. _createGistResult of
+    Loading -> "Saving..."
+    _ -> "Save"

@@ -1,5 +1,5 @@
 header {
-  padding: 1rem 2rem;
+  padding: 0.5rem 2rem;
   background: var(--bg-dark);
   max-height: 80px;
 }
@@ -11,4 +11,30 @@ header {
 
 .marlowe-logo svg {
   fill: url(#marlowe__linear-gradient) var(--primary-color);
+}
+
+.global-actions {
+  display: flex;
+  align-items: center;
+  padding: 1em 1em;
+  background-color: var(--bg-light);
+  border-bottom: solid 1px var(--bg-dark);
+}
+
+.global-actions h2 {
+  margin: 0 1rem;
+}
+
+.global-actions button {
+  height: 2rem;
+}
+
+.save-button-group {
+  display: flex;
+  align-items: center;
+}
+
+.save-button-group .error {
+  color: var(--error-color);
+  padding: 0em 1em;
 }
