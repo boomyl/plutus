@@ -3,7 +3,7 @@
   .expanded a .drawer-icon {
     transform: rotate(0deg);
   }
-  
+
   .drawer-icon {
     display: block;
     margin-left: auto;
@@ -86,6 +86,10 @@
   .panel-sub-header .panel-sub-header-side.expanded,
   .code-panel .sidebar-composer.expanded {
     transform: translatex(0);
+  }
+
+  .code-panel .sidebar-composer .drawer-icon-container {
+    opacity: 1;
   }
 
   .code-panel .sidebar-composer>div,

@@ -27,10 +27,10 @@ import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import FileEvents (readFileFromDragEvent)
 import FileEvents as FileEvents
-import Halogen (HalogenM, query)
-import Halogen.Classes (aHorizontal, activeClasses, blocklyIcon, bold, closeDrawerIcon, codeEditor, expanded, infoIcon, jFlexStart, noMargins, panelSubHeader, panelSubHeaderMain, panelSubHeaderSide, plusBtn, pointer, sidebarComposer, smallBtn, spaceLeft, spanText, textSecondaryColor, uppercase)
+import Halogen (ClassName(..), HalogenM, query)
+import Halogen.Classes (aHorizontal, activeClasses, bold, closeDrawerIcon, codeEditor, expanded, infoIcon, jFlexStart, noMargins, panelSubHeader, panelSubHeaderMain, panelSubHeaderSide, plusBtn, pointer, sidebarComposer, smallBtn, spaceLeft, spanText, textSecondaryColor, uppercase)
 import Halogen.Classes as Classes
-import Halogen.HTML (ClassName(..), ComponentHTML, HTML, a, article, aside, b_, br_, button, div, em_, h6, h6_, img, input, li, option, p, p_, section, select, slot, small, span, strong_, text, ul)
+import Halogen.HTML (ClassName(..), ComponentHTML, HTML, a, article, aside, b_, br_, button, div, em_, h6, h6_, img, input, li, option, p, p_, section, select, slot, small, strong_, text, ul)
 import Halogen.HTML.Events (onClick, onSelectedIndexChange, onValueChange)
 import Halogen.HTML.Properties (InputType(..), alt, class_, classes, enabled, placeholder, src, type_, value)
 import Halogen.HTML.Properties as HTML
@@ -326,42 +326,7 @@ render ::
   ComponentHTML Action ChildSlots m
 render state =
   div []
-    [ section [ classes [ panelSubHeader, aHorizontal ] ]
-        [ div [ classes [ panelSubHeaderMain, aHorizontal ] ]
-            [ a [ class_ (ClassName "editor-help"), onClick $ const $ Just $ ChangeHelpContext EditorHelp ]
-                [ img [ src infoIcon, alt "info book icon" ] ]
-            , div [ classes [ ClassName "demo-title", aHorizontal, jFlexStart ] ]
-                [ div [ classes [ spaceLeft ] ]
-                    [ small [ classes [ textSecondaryColor, bold, uppercase ] ] [ text "Demos:" ]
-                    ]
-                ]
-            , ul [ classes [ ClassName "demo-list", aHorizontal ] ]
-                (demoScriptLink <$> Array.fromFoldable (map fst StaticData.marloweContracts))
-            , div [ class_ (ClassName "code-to-blockly-wrap") ]
-                [ div [ class_ (ClassName "editor-options") ]
-                    [ select
-                        [ HTML.id_ "editor-options"
-                        , class_ (ClassName "dropdown-header")
-                        , onSelectedIndexChange (\idx -> SelectEditorKeyBindings <$> toEnum idx)
-                        ]
-                        (map keybindingItem (upFromIncluding bottom))
-                    ]
-                , button
-                    [ classes [ smallBtn, ClassName "tooltip" ]
-                    , onClick $ const $ Just $ SetBlocklyCode
-                    , enabled isBlocklyEnabled
-                    ]
-                    [ span [ class_ (ClassName "tooltiptext") ] [ text "Send Contract to Blockly" ]
-                    , img [ class_ (ClassName "blockly-btn-icon"), src blocklyIcon, alt "blockly logo" ]
-                    ]
-                ]
-            ]
-        , div [ classes [ panelSubHeaderSide, expanded (state ^. _showRightPanel) ] ]
-            [ a [ classes [ (ClassName "drawer-icon-click") ], onClick $ const $ Just $ ShowRightPanel (not showRightPanel) ]
-                [ img [ src closeDrawerIcon, class_ (ClassName "drawer-icon") ] ]
-            ]
-        ]
-    , section [ class_ (ClassName "code-panel") ]
+    [ section [ class_ (ClassName "code-panel") ]
         [ div [ classes (codeEditor $ state ^. _showBottomPanel) ]
             [ marloweEditor state ]
         , sidebar state
@@ -371,12 +336,32 @@ render state =
   where
   showRightPanel = state ^. _showRightPanel
 
-  isBlocklyEnabled = view (_marloweState <<< _Head <<< _editorErrors <<< to Array.null) state
-
   demoScriptLink key =
     li [ state ^. _activeDemo <<< activeClasses (eq key) ]
       [ a [ onClick $ const $ Just $ LoadScript key ] [ text key ] ]
 
+sendToBlocklyButton :: forall p. State -> HTML p Action
+sendToBlocklyButton state =
+  button
+    [ onClick $ const $ Just $ SetBlocklyCode
+    , enabled isBlocklyEnabled
+    , classes [ Classes.disabled (not isBlocklyEnabled) ]
+    ]
+    [ text "Send To Blockly" ]
+  where
+  isBlocklyEnabled = view (_marloweState <<< _Head <<< _editorErrors <<< to Array.null) state
+
+editorOptions :: forall p. State -> HTML p Action
+editorOptions state =
+  div [ class_ (ClassName "editor-options") ]
+    [ select
+        [ HTML.id_ "editor-options"
+        , class_ (ClassName "dropdown-header")
+        , onSelectedIndexChange (\idx -> SelectEditorKeyBindings <$> toEnum idx)
+        ]
+        (map keybindingItem (upFromIncluding bottom))
+    ]
+  where
   keybindingItem item =
     if state ^. _editorKeybindings == item then
       option [ class_ (ClassName "selected-item"), HTML.value (show item) ] [ text $ show item ]
@@ -414,7 +399,11 @@ sidebar state =
     showRightPanel = state ^. _showRightPanel
   in
     aside [ classes [ sidebarComposer, expanded showRightPanel ] ]
-      [ div [ classes [ aHorizontal, ClassName "transaction-composer" ] ]
+      [ div [ classes [ panelSubHeaderSide, expanded (state ^. _showRightPanel), ClassName "drawer-icon-container" ] ]
+          [ a [ classes [ (ClassName "drawer-icon-click") ], onClick $ const $ Just $ ShowRightPanel (not showRightPanel) ]
+              [ img [ src closeDrawerIcon, class_ (ClassName "drawer-icon") ] ]
+          ]
+      , div [ classes [ aHorizontal, ClassName "transaction-composer" ] ]
           [ h6 [ classes [ ClassName "input-composer-heading", noMargins ] ]
               [ small [ classes [ textSecondaryColor, bold, uppercase ] ] [ text "Available Actions" ] ]
           , a [ onClick $ const $ Just $ ChangeHelpContext AvailableActionsHelp ] [ img [ src infoIcon, alt "info book icon" ] ]

@@ -26,6 +26,7 @@ data SubRoute
   | Wallets
   | Projects
   | NewProject
+  | Demos
 
 derive instance eqRoute :: Eq SubRoute
 
@@ -47,6 +48,7 @@ route =
         , "Wallets": "wallets" / noArgs
         , "Projects": "projects" / noArgs
         , "NewProject": "new-project" / noArgs
+        , "Demos": "demos" / noArgs
         }
   where
   _gistId = SProxy :: SProxy "gistId"

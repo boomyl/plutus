@@ -24,7 +24,7 @@
 }
 
 .panel-sub-header-side {
-  min-height: 3.5rem;
+  min-height: 0rem;
 }
 
 .panel-sub-header-main {
@@ -137,7 +137,7 @@
 
 .panel-header-side,
 .panel-sub-header-side {
-  padding-left: 20px;
+  padding-left: 0px;
   padding-top: 12px;
 }
 

@@ -12,6 +12,7 @@ import Data.Lens.Record (prop)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.Symbol (SProxy(..))
+import Demos.Types as Demos
 import Gist (Gist, GistId)
 import Gists (GistAction)
 import Halogen (AttrName(..), ClassName)
@@ -61,6 +62,7 @@ data Action
   | HandleWalletMessage Wallet.Message
   | ProjectsAction Projects.Action
   | NewProjectAction NewProject.Action
+  | DemosAction Demos.Action
   -- Gist support.
   | CheckAuthStatus
   | GistAction GistAction
@@ -85,6 +87,7 @@ instance actionIsEvent :: IsEvent Action where
   toEvent SendResultJSToSimulator = Just $ defaultEvent "SendResultJSToSimulator"
   toEvent (ProjectsAction action) = toEvent action
   toEvent (NewProjectAction action) = toEvent action
+  toEvent (DemosAction action) = toEvent action
   toEvent CheckAuthStatus = Just $ defaultEvent "CheckAuthStatus"
   toEvent (GistAction _) = Just $ defaultEvent "GistAction"
 
@@ -131,6 +134,7 @@ data View
   | WalletEmulator
   | Projects
   | NewProject
+  | Demos
 
 derive instance eqView :: Eq View
 

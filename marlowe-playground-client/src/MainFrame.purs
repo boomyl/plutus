@@ -9,14 +9,16 @@ import Data.Either (Either(..), either, note)
 import Data.Foldable (for_, traverse_)
 import Data.Lens (_Right, assign, preview, to, use, view, (^.))
 import Data.Lens.Extra (peruse)
+import Data.Lens.Index (ix)
 import Data.List.NonEmpty as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (unwrap)
-import Debug.Trace (trace)
+import Demos (handleAction, render) as Demos
+import Demos.Types (Action(..), Demo(..)) as Demos
 import Effect.Aff.Class (class MonadAff)
 import Effect.Class (class MonadEffect)
-import Gist (Gist, gistDescription, gistId)
+import Gist (Gist, _GistId, gistDescription, gistId)
 import GistButtons as GistButtons
 import Gists (GistAction(..))
 import Gists as Gists
@@ -71,7 +73,7 @@ import Simulation as Simulation
 import Simulation.State (_result)
 import Simulation.Types (_marloweState)
 import Simulation.Types as ST
-import StaticData (bufferLocalStorageKey, jsBufferLocalStorageKey, marloweBufferLocalStorageKey, showHomePageLocalStorageKey)
+import StaticData (bufferLocalStorageKey, gistIdLocalStorageKey, jsBufferLocalStorageKey, marloweBufferLocalStorageKey, showHomePageLocalStorageKey)
 import StaticData as StaticData
 import Text.Pretty (pretty)
 import Types (Action(..), ChildSlots, FrontendState(FrontendState), JSCompilationState(..), Query(..), View(..), WebData, _activeJSDemo, _actusBlocklySlot, _authStatus, _blocklySlot, _createGistResult, _gistId, _haskellEditorSlot, _haskellState, _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _loadGistResult, _newProject, _projectName, _projects, _showBottomPanel, _showHomePage, _simulationState, _view, _walletSlot)
@@ -142,6 +144,12 @@ toNewProject ::
   HalogenM NewProject.State NewProject.Action ChildSlots Void m a -> HalogenM FrontendState Action ChildSlots Void m a
 toNewProject = mapSubmodule _newProject NewProjectAction
 
+toDemos ::
+  forall m a.
+  Functor m =>
+  HalogenM FrontendState Demos.Action ChildSlots Void m a -> HalogenM FrontendState Action ChildSlots Void m a
+toDemos = mapSubmodule identity DemosAction
+
 handleSubRoute ::
   forall m.
   MonadEffect m =>
@@ -167,6 +175,8 @@ handleSubRoute settings Router.Projects = do
   toProjects $ Projects.handleAction settings Projects.LoadProjects
 
 handleSubRoute _ Router.NewProject = selectView NewProject
+
+handleSubRoute _ Router.Demos = selectView Demos
 
 handleRoute ::
   forall m.
@@ -367,7 +377,9 @@ handleAction s (NewProjectAction action@(NewProject.CreateProject lang)) = do
   handleGistAction s PublishGist
   res <- peruse (_createGistResult <<< _Success)
   case res of
-    Just _ -> traverse_ selectView $ selectLanguageView lang
+    Just gist -> do
+      liftEffect $ LocalStorage.setItem gistIdLocalStorageKey (gist ^. (gistId <<< _GistId))
+      traverse_ selectView $ selectLanguageView lang
     Nothing -> do
       assign (_newProject <<< NewProject._error) (Just "Could not create new project")
       assign _projectName currentProject
@@ -375,6 +387,19 @@ handleAction s (NewProjectAction action@(NewProject.CreateProject lang)) = do
   toNewProject $ NewProject.handleAction s action
 
 handleAction s (NewProjectAction action) = toNewProject $ NewProject.handleAction s action
+
+handleAction s (DemosAction action@Demos.LoadProject) = selectView Projects
+
+handleAction s (DemosAction action@Demos.NewProject) = selectView NewProject
+
+handleAction s (DemosAction action@(Demos.LoadDemo lang (Demos.Demo key))) = do
+  for_ (Map.lookup key StaticData.demoFiles) \contents -> HaskellEditor.editorSetValue contents
+  for_ (Map.lookup key StaticData.demoFilesJS) \contents -> void $ query _jsEditorSlot unit (Monaco.SetText contents unit)
+  for_ (preview (ix key) (Map.fromFoldable StaticData.marloweContracts)) \contents -> do
+    Simulation.editorSetValue contents
+    void $ query _blocklySlot unit (Blockly.SetCode contents unit)
+  toDemos $ Demos.handleAction s action
+  traverse_ selectView $ selectLanguageView lang
 
 handleAction settings CheckAuthStatus = do
   checkAuthStatus settings
@@ -421,18 +446,15 @@ handleGistAction ::
 handleGistAction settings PublishGist = do
   description <- use _projectName
   let
+    -- playground is a meta-data file that we currently just use as a tag to check if a gist is a marlowe playground gist
     playground = "{}"
-  simulation <- use (_simulationState <<< _marloweState)
-  currentSimulation <- toSimulation Simulation.editorGetValue
-  oldSimulation <- use (_simulationState <<< ST._oldContract)
-  -- soon we will separate the marlowe editor and the simulation, currently they are the same
   marlowe <- toSimulation Simulation.editorGetValue
   haskell <- HaskellEditor.editorGetValue
   blockly <- query _blocklySlot unit $ H.request Blockly.GetWorkspace
   javascript <- query _jsEditorSlot unit $ H.request Monaco.GetText
   actus <- query _actusBlocklySlot unit $ H.request ActusBlockly.GetWorkspace
   let
-    files = { playground, currentSimulation, oldSimulation, simulation, marlowe, haskell, blockly, javascript, actus }
+    files = { playground, marlowe, haskell, blockly, javascript, actus }
 
     newGist = mkNewGist description files
   void
@@ -440,11 +462,10 @@ handleGistAction settings PublishGist = do
         mGist <- use _gistId
         assign _createGistResult Loading
         newResult <-
-          trace mGist \_ ->
-            lift
-              $ case mGist of
-                  Nothing -> runAjax $ flip runReaderT settings $ Server.postApiGists newGist
-                  Just gistId -> runAjax $ flip runReaderT settings $ Server.patchApiGistsByGistId newGist gistId
+          lift
+            $ case mGist of
+                Nothing -> runAjax $ flip runReaderT settings $ Server.postApiGists newGist
+                Just gistId -> runAjax $ flip runReaderT settings $ Server.patchApiGistsByGistId newGist gistId
         assign _createGistResult newResult
         gistId <- hoistMaybe $ preview (_Success <<< gistId) newResult
         assign _gistId (Just gistId)
@@ -488,10 +509,7 @@ loadGist ::
   HalogenM FrontendState Action ChildSlots Void m Unit
 loadGist gist = do
   let
-    { simulation
-    , currentSimulation
-    , oldSimulation
-    , marlowe
+    { marlowe
     , haskell
     , blockly
     , javascript
@@ -507,8 +525,6 @@ loadGist gist = do
   assign _gistId gistId'
   assign _projectName description
   toSimulation $ Simulation.editorSetValue $ fromMaybe mempty marlowe
-  assign (_simulationState <<< ST._oldContract) oldSimulation
-  assign (_simulationState <<< ST._marloweState) simulation
   HaskellEditor.editorSetValue (fromMaybe mempty haskell)
   for_ blockly \xml -> query _blocklySlot unit (Blockly.LoadWorkspace xml unit)
   void $ query _jsEditorSlot unit (Monaco.SetText (fromMaybe mempty javascript) unit)
@@ -531,6 +547,7 @@ selectView view = do
       ActusBlocklyEditor -> Router.ActusBlocklyEditor
       Projects -> Router.Projects
       NewProject -> Router.NewProject
+      Demos -> Router.Demos
   liftEffect $ Routing.setHash (RT.print Router.route { subroute, gistId: Nothing })
   assign _view view
   case view of
@@ -549,6 +566,7 @@ selectView view = do
     ActusBlocklyEditor -> void $ query _actusBlocklySlot unit (ActusBlockly.Resize unit)
     Projects -> pure unit
     NewProject -> pure unit
+    Demos -> pure unit
 
 render ::
   forall m.
@@ -585,7 +603,7 @@ render settings state =
             ]
         , a [ href "./tutorial/index.html", target "_blank", classes [] ] [ text "Tutorial" ]
         ]
-    , globalActions
+    , globalActions (state ^. _view)
     , main []
         [ nav [ id_ "panel-nav" ]
             [ div
@@ -666,6 +684,7 @@ render settings state =
                 ]
             , tabContents Projects [ renderSubmodule _projects ProjectsAction Projects.render state ]
             , tabContents NewProject [ renderSubmodule _newProject NewProjectAction NewProject.render state ]
+            , tabContents Demos [ renderSubmodule identity DemosAction Demos.render state ]
             ]
         ]
     ]
@@ -676,17 +695,28 @@ render settings state =
 
   tabContents activeView contents = if isActiveView activeView then div [ classes [ fullHeight ] ] contents else div [ classes [ hide ] ] contents
 
-  showGlobalActions = case state ^. _view of
-    HomePage -> false
-    Projects -> false
-    NewProject -> false
-    _ -> true
+  globalActions HaskellEditor =
+    div [ class_ (ClassName "global-actions") ]
+      [ div [ classes [ ClassName "group" ] ]
+          [ h2_ [ text (state ^. _projectName) ]
+          , GistButtons.authButton state
+          ]
+      , div [ classes [ ClassName "group" ] ]
+          [ renderSubmodule _haskellState HaskellAction HaskellEditor.editorOptions state
+          , renderSubmodule _haskellState HaskellAction HaskellEditor.compileButton state
+          ]
+      ]
 
-  globalActions =
-    if showGlobalActions then
-      div [ class_ (ClassName "global-actions") ]
-        [ h2_ [ text (state ^. _projectName) ]
-        , GistButtons.authButton state
-        ]
-    else
-      text ""
+  globalActions Simulation =
+    div [ class_ (ClassName "global-actions") ]
+      [ div [ classes [ ClassName "group" ] ]
+          [ h2_ [ text (state ^. _projectName) ]
+          , GistButtons.authButton state
+          ]
+      , div [ classes [ ClassName "group" ] ]
+          [ renderSubmodule _simulationState SimulationAction Simulation.editorOptions state
+          , renderSubmodule _simulationState SimulationAction Simulation.sendToBlocklyButton state
+          ]
+      ]
+
+  globalActions _ = text ""

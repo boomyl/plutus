@@ -16,8 +16,8 @@ import Effect.Aff.Class (class MonadAff)
 import Examples.Haskell.Contracts as HE
 import Halogen (ClassName(..), ComponentHTML, HalogenM, liftEffect, query)
 import Halogen.Blockly as Blockly
-import Halogen.Classes (aHorizontal, activeClasses, analysisPanel, closeDrawerArrowIcon, codeEditor, collapsed, footerPanelBg, jFlexStart, minimizeIcon, panelSubHeader, panelSubHeaderMain, spaceLeft)
-import Halogen.HTML (HTML, a, button, code_, div, div_, img, li, option, pre_, section, select, slot, small_, text, ul)
+import Halogen.Classes (aHorizontal, activeClasses, analysisPanel, closeDrawerArrowIcon, codeEditor, collapsed, footerPanelBg, minimizeIcon)
+import Halogen.HTML (HTML, a, button, code_, div, div_, img, li, option, pre_, section, select, slot, text)
 import Halogen.HTML.Events (onClick, onSelectedIndexChange)
 import Halogen.HTML.Properties (alt, class_, classes, disabled, src)
 import Halogen.HTML.Properties as HTML
@@ -135,29 +135,23 @@ render ::
   ComponentHTML Action ChildSlots m
 render state =
   div_
-    [ section [ classes [ panelSubHeader, aHorizontal ] ]
-        [ div [ classes [ panelSubHeaderMain, aHorizontal ] ]
-            [ div [ classes [ ClassName "demo-title", aHorizontal, jFlexStart ] ]
-                [ div [ classes [ ClassName "demos", spaceLeft ] ]
-                    [ small_ [ text "Demos:" ]
-                    ]
-                ]
-            , ul [ classes [ ClassName "demo-list", aHorizontal ] ]
-                (demoScriptLink <$> Array.fromFoldable (Map.keys StaticData.demoFiles))
-            ]
-        , div [ class_ (ClassName "editor-options") ]
-            [ select
-                [ HTML.id_ "editor-options"
-                , class_ (ClassName "dropdown-header")
-                , onSelectedIndexChange (\idx -> ChangeKeyBindings <$> toEnum idx)
-                ]
-                (map keybindingItem (upFromIncluding bottom))
-            ]
-        ]
-    , section [ class_ (ClassName "code-panel") ]
+    [ section [ class_ (ClassName "code-panel") ]
         [ div [ classes (codeEditor $ state ^. _showBottomPanel) ]
             [ haskellEditor state ]
         ]
+    ]
+  where
+  demoScriptLink key = li [ state ^. _activeHaskellDemo <<< activeClasses (eq key) ] [ a [ onClick $ const $ Just $ LoadScript key ] [ text key ] ]
+
+editorOptions :: forall p. State -> HTML p Action
+editorOptions state =
+  div [ class_ (ClassName "editor-options") ]
+    [ select
+        [ HTML.id_ "editor-options"
+        , class_ (ClassName "dropdown-header")
+        , onSelectedIndexChange (\idx -> ChangeKeyBindings <$> toEnum idx)
+        ]
+        (map keybindingItem (upFromIncluding bottom))
     ]
   where
   keybindingItem item =
@@ -165,8 +159,6 @@ render state =
       option [ class_ (ClassName "selected-item"), HTML.value (show item) ] [ text $ show item ]
     else
       option [ HTML.value (show item) ] [ text $ show item ]
-
-  demoScriptLink key = li [ state ^. _activeHaskellDemo <<< activeClasses (eq key) ] [ a [ onClick $ const $ Just $ LoadScript key ] [ text key ] ]
 
 haskellEditor ::
   forall m.
@@ -208,8 +200,7 @@ bottomPanel state =
                 , div
                     [ classes ([ ClassName "panel-tab", aHorizontal, ClassName "haskell-buttons" ])
                     ]
-                    [ button [ onClick $ const $ Just Compile ] [ text (if state ^. _compilationResult <<< to isLoading then "Compiling..." else "Compile") ]
-                    , sendResultButton state "Send To Simulator" SendResultToSimulator
+                    [ sendResultButton state "Send To Simulator" SendResultToSimulator
                     , sendResultButton state "Send To Blockly" SendResultToBlockly
                     ]
                 ]
@@ -222,6 +213,9 @@ bottomPanel state =
     ]
   where
   showingBottomPanel = state ^. _showBottomPanel
+
+compileButton :: forall p. State -> HTML p Action
+compileButton state = button [ onClick $ const $ Just Compile ] [ text (if state ^. _compilationResult <<< to isLoading then "Compiling..." else "Compile") ]
 
 sendResultButton :: forall p. State -> String -> Action -> HTML p Action
 sendResultButton state msg action =
