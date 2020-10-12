@@ -12,7 +12,7 @@ import Data.Lens.Record (prop)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.Symbol (SProxy(..))
-import Gist (Gist)
+import Gist (Gist, GistId)
 import Gists (GistAction)
 import Halogen (AttrName(..), ClassName)
 import Halogen as H
@@ -160,7 +160,7 @@ newtype FrontendState
   , projects :: Projects.State
   , newProject :: NewProject.State
   , authStatus :: WebData AuthStatus
-  , gistUrl :: Maybe String
+  , gistId :: Maybe GistId
   , createGistResult :: WebData Gist
   , loadGistResult :: Either String (WebData Gist)
   , projectName :: String
@@ -213,8 +213,8 @@ _newProject = _Newtype <<< prop (SProxy :: SProxy "newProject")
 _authStatus :: Lens' FrontendState (WebData AuthStatus)
 _authStatus = _Newtype <<< prop (SProxy :: SProxy "authStatus")
 
-_gistUrl :: Lens' FrontendState (Maybe String)
-_gistUrl = _Newtype <<< prop (SProxy :: SProxy "gistUrl")
+_gistId :: Lens' FrontendState (Maybe GistId)
+_gistId = _Newtype <<< prop (SProxy :: SProxy "gistId")
 
 _createGistResult :: Lens' FrontendState (WebData Gist)
 _createGistResult = _Newtype <<< prop (SProxy :: SProxy "createGistResult")

@@ -1,6 +1,6 @@
 module MainFrame (mkMainFrame) where
 
-import Control.Monad.Except (ExceptT(..), except, lift, runExceptT)
+import Control.Monad.Except (ExceptT(..), lift, runExceptT)
 import Control.Monad.Maybe.Extra (hoistMaybe)
 import Control.Monad.Maybe.Trans (runMaybeT)
 import Control.Monad.Reader (runReaderT)
@@ -13,9 +13,10 @@ import Data.List.NonEmpty as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (unwrap)
+import Debug.Trace (trace)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Class (class MonadEffect)
-import Gist (Gist, _GistId, gistDescription, gistId)
+import Gist (Gist, gistDescription, gistId)
 import GistButtons as GistButtons
 import Gists (GistAction(..))
 import Gists as Gists
@@ -73,7 +74,7 @@ import Simulation.Types as ST
 import StaticData (bufferLocalStorageKey, jsBufferLocalStorageKey, marloweBufferLocalStorageKey, showHomePageLocalStorageKey)
 import StaticData as StaticData
 import Text.Pretty (pretty)
-import Types (Action(..), ChildSlots, FrontendState(FrontendState), JSCompilationState(..), Query(..), View(..), WebData, _activeJSDemo, _actusBlocklySlot, _authStatus, _blocklySlot, _createGistResult, _gistUrl, _haskellEditorSlot, _haskellState, _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _loadGistResult, _newProject, _projectName, _projects, _showBottomPanel, _showHomePage, _simulationState, _view, _walletSlot)
+import Types (Action(..), ChildSlots, FrontendState(FrontendState), JSCompilationState(..), Query(..), View(..), WebData, _activeJSDemo, _actusBlocklySlot, _authStatus, _blocklySlot, _createGistResult, _gistId, _haskellEditorSlot, _haskellState, _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _loadGistResult, _newProject, _projectName, _projects, _showBottomPanel, _showHomePage, _simulationState, _view, _walletSlot)
 import Wallet as Wallet
 
 initialState :: FrontendState
@@ -92,7 +93,7 @@ initialState =
     , projects: Projects.emptyState
     , newProject: NewProject.emptyState
     , authStatus: NotAsked
-    , gistUrl: Nothing
+    , gistId: Nothing
     , createGistResult: NotAsked
     , loadGistResult: Right NotAsked
     , projectName: "Untitled Project"
@@ -357,9 +358,12 @@ handleAction s (ProjectsAction action@(Projects.LoadProject lang gistId)) = do
 handleAction s (ProjectsAction action) = toProjects $ Projects.handleAction s action
 
 handleAction s (NewProjectAction action@(NewProject.CreateProject lang)) = do
+  -- we want to keep the current poject details in case creating a new project fails
   currentProject <- use _projectName
+  currentGistId <- use _gistId
   description <- use (_newProject <<< NewProject._projectName)
   assign _projectName description
+  assign _gistId Nothing
   handleGistAction s PublishGist
   res <- peruse (_createGistResult <<< _Success)
   case res of
@@ -367,6 +371,7 @@ handleAction s (NewProjectAction action@(NewProject.CreateProject lang)) = do
     Nothing -> do
       assign (_newProject <<< NewProject._error) (Just "Could not create new project")
       assign _projectName currentProject
+      assign _gistId currentGistId
   toNewProject $ NewProject.handleAction s action
 
 handleAction s (NewProjectAction action) = toNewProject $ NewProject.handleAction s action
@@ -432,29 +437,32 @@ handleGistAction settings PublishGist = do
     newGist = mkNewGist description files
   void
     $ runMaybeT do
-        mGist <- use _createGistResult
+        mGist <- use _gistId
         assign _createGistResult Loading
         newResult <-
-          lift
-            $ case preview (_Success <<< gistId) mGist of
-                Nothing -> runAjax $ flip runReaderT settings $ Server.postApiGists newGist
-                Just gistId -> runAjax $ flip runReaderT settings $ Server.patchApiGistsByGistId newGist gistId
+          trace mGist \_ ->
+            lift
+              $ case mGist of
+                  Nothing -> runAjax $ flip runReaderT settings $ Server.postApiGists newGist
+                  Just gistId -> runAjax $ flip runReaderT settings $ Server.patchApiGistsByGistId newGist gistId
         assign _createGistResult newResult
-        gistId <- hoistMaybe $ preview (_Success <<< gistId <<< _GistId) newResult
-        assign _gistUrl (Just gistId)
+        gistId <- hoistMaybe $ preview (_Success <<< gistId) newResult
+        assign _gistId (Just gistId)
         assign _loadGistResult (Right NotAsked)
 
-handleGistAction _ (SetGistUrl newGistUrl) = do
-  assign _createGistResult NotAsked
-  assign _loadGistResult (Right NotAsked)
-  assign _gistUrl (Just newGistUrl)
+handleGistAction _ (SetGistUrl url) = do
+  case Gists.parseGistUrl url of
+    Right newGistUrl -> do
+      assign _createGistResult NotAsked
+      assign _loadGistResult (Right NotAsked)
+      assign _gistId (Just newGistUrl)
+    Left _ -> pure unit
 
 handleGistAction settings LoadGist = do
   res <-
     runExceptT
       $ do
-          mGistId <- ExceptT $ note "Gist Url not set." <$> use _gistUrl
-          eGistId <- except $ Gists.parseGistUrl mGistId
+          eGistId <- ExceptT $ note "Gist Id not set." <$> use _gistId
           assign _loadGistResult $ Right Loading
           aGist <- lift $ runAjax $ flip runReaderT settings $ Server.getApiGistsByGistId eGistId
           assign _loadGistResult $ Right aGist
@@ -492,11 +500,11 @@ loadGist gist = do
 
     description = view gistDescription gist
 
-    gistUrl = preview (gistId <<< _GistId) gist
+    gistId' = preview gistId gist
   for_ haskell \s -> liftEffect $ LocalStorage.setItem bufferLocalStorageKey s
   for_ javascript \s -> liftEffect $ LocalStorage.setItem jsBufferLocalStorageKey s
   for_ marlowe \s -> liftEffect $ LocalStorage.setItem marloweBufferLocalStorageKey s
-  assign _gistUrl gistUrl
+  assign _gistId gistId'
   assign _projectName description
   toSimulation $ Simulation.editorSetValue $ fromMaybe mempty marlowe
   assign (_simulationState <<< ST._oldContract) oldSimulation
