@@ -28,8 +28,10 @@ render ::
   ComponentHTML Action ChildSlots m
 render state =
   div [ classes [ ClassName "projects-container" ] ]
-    [ button [ onClick $ const $ Just NewProject ] [ text "Create a new project" ]
-    , button [ onClick $ const $ Just LoadProject ] [ text "Load an existing project" ]
+    [ div [ classes [ ClassName "group", ClassName "nav-buttons" ] ]
+        [ button [ onClick $ const $ Just NewProject ] [ text "Create a new project" ]
+        , button [ onClick $ const $ Just LoadProject ] [ text "Load an existing project" ]
+        ]
     , hr_
     , h1_ [ text "Demo Files" ]
     , demoFile (wrap "Escrow") "Escrow" "Escrow is a financial arrangement where a third party holds and regulates payment of the funds required for two parties involved in a given transaction."
@@ -44,7 +46,7 @@ demoFile key name description =
     [ h2_ [ text name ]
     , div [ class_ (ClassName "group") ]
         [ span [ class_ (ClassName "description") ] [ text description ]
-        , div [ class_ (ClassName "group") ]
+        , div [ classes [ ClassName "group", ClassName "open-buttons" ] ]
             [ button [ onClick $ const $ Just $ LoadDemo Haskell key ] [ text "Haskell" ]
             , button [ onClick $ const $ Just $ LoadDemo Marlowe key ] [ text "Marlowe" ]
             , button [ onClick $ const $ Just $ LoadDemo Blockly key ] [ text "Blockly" ]

@@ -7,8 +7,9 @@ body,
 
 main {
   display: flex;
+  flex-direction: column;
   overflow: hidden;
-  height: calc(100vh - 120px);
+  height: 100%;
 }
 
 main nav {

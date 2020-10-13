@@ -39,6 +39,19 @@ import Wallet as Wallet
 data Query a
   = ChangeRoute Route a
 
+data ModalView
+  = NewProject
+  | OpenProject
+  | OpenDemo
+  | RenameProject
+  | SaveProjectAs
+  | GithubLogin
+
+derive instance genericModalView :: Generic ModalView _
+
+instance showModalView :: Show ModalView where
+  show = genericShow
+
 data Action
   = Init
   -- Home Page
@@ -66,6 +79,8 @@ data Action
   -- Gist support.
   | CheckAuthStatus
   | GistAction GistAction
+  | OpenModal ModalView
+  | CloseModal
 
 -- | Here we decide which top-level queries to track as GA events, and
 -- how to classify them.
@@ -90,6 +105,8 @@ instance actionIsEvent :: IsEvent Action where
   toEvent (DemosAction action) = toEvent action
   toEvent CheckAuthStatus = Just $ defaultEvent "CheckAuthStatus"
   toEvent (GistAction _) = Just $ defaultEvent "GistAction"
+  toEvent (OpenModal view) = Just $ (defaultEvent (show view)) { category = Just "OpenModal" }
+  toEvent CloseModal = Just $ defaultEvent "CloseModal"
 
 ------------------------------------------------------------
 type ChildSlots
@@ -132,9 +149,6 @@ data View
   | BlocklyEditor
   | ActusBlocklyEditor
   | WalletEmulator
-  | Projects
-  | NewProject
-  | Demos
 
 derive instance eqView :: Eq View
 
@@ -168,6 +182,7 @@ newtype FrontendState
   , createGistResult :: WebData Gist
   , loadGistResult :: Either String (WebData Gist)
   , projectName :: String
+  , showModal :: Maybe ModalView
   }
 
 derive instance newtypeFrontendState :: Newtype FrontendState _
@@ -228,6 +243,9 @@ _loadGistResult = _Newtype <<< prop (SProxy :: SProxy "loadGistResult")
 
 _projectName :: Lens' FrontendState String
 _projectName = _Newtype <<< prop (SProxy :: SProxy "projectName")
+
+_showModal :: Lens' FrontendState (Maybe ModalView)
+_showModal = _Newtype <<< prop (SProxy :: SProxy "showModal")
 
 -- editable
 _timestamp ::

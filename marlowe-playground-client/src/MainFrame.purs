@@ -1,5 +1,6 @@
 module MainFrame (mkMainFrame) where
 
+import Auth (_AuthStatus, _GithubUser, authStatusAuthRole)
 import Control.Monad.Except (ExceptT(..), lift, runExceptT)
 import Control.Monad.Maybe.Extra (hoistMaybe)
 import Control.Monad.Maybe.Trans (runMaybeT)
@@ -7,14 +8,14 @@ import Control.Monad.Reader (runReaderT)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either, note)
 import Data.Foldable (for_, traverse_)
-import Data.Lens (_Right, assign, preview, to, use, view, (^.))
+import Data.Lens (_Right, assign, has, is, preview, previewOn, to, use, view, (^.))
 import Data.Lens.Extra (peruse)
 import Data.Lens.Index (ix)
 import Data.List.NonEmpty as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (unwrap)
-import Demos (handleAction, render) as Demos
+import Demos (handleAction) as Demos
 import Demos.Types (Action(..), Demo(..)) as Demos
 import Effect.Aff.Class (class MonadAff)
 import Effect.Class (class MonadEffect)
@@ -22,17 +23,18 @@ import Gist (Gist, _GistId, gistDescription, gistId)
 import GistButtons as GistButtons
 import Gists (GistAction(..))
 import Gists as Gists
-import Halogen (Component, ComponentHTML, get, liftEffect, query, subscribe)
+import Halogen (ClassName(..), Component, ComponentHTML, get, liftEffect, query, subscribe)
 import Halogen as H
 import Halogen.ActusBlockly as ActusBlockly
 import Halogen.Analytics (handleActionWithAnalyticsTracking)
 import Halogen.Blockly (BlocklyMessage(..), blockly)
 import Halogen.Blockly as Blockly
-import Halogen.Classes (aCenter, aHorizontal, active, flexCol, fullHeight, hide, iohkLogo, noMargins, spaceLeft, spaceRight, tabIcon, tabLink, uppercase)
+import Halogen.Classes (aHorizontal, active, fullHeight, hide, noMargins, spaceLeft, spaceRight, uppercase)
+import Halogen.Classes as Classes
 import Halogen.Extra (mapSubmodule, renderSubmodule)
-import Halogen.HTML (ClassName(ClassName), HTML, a, div, h1, h2_, header, img, main, nav, section, slot, text)
+import Halogen.HTML (ClassName(ClassName), HTML, a, div, h1, h2_, header, main, section, slot, text)
 import Halogen.HTML.Events (onClick)
-import Halogen.HTML.Properties (class_, classes, href, id_, src, target)
+import Halogen.HTML.Properties (class_, classes, href, id_, target)
 import Halogen.Monaco (KeyBindings(DefaultBindings))
 import Halogen.Monaco as Monaco
 import Halogen.Query (HalogenM)
@@ -56,10 +58,10 @@ import Marlowe.Gists (mkNewGist, playgroundFiles)
 import Marlowe.Parser (parseContract)
 import Network.RemoteData (RemoteData(..), _Success)
 import Network.RemoteData as RemoteData
-import NewProject (handleAction, render) as NewProject
+import NewProject (handleAction) as NewProject
 import NewProject.Types (Action(..), State, _error, _projectName, emptyState) as NewProject
 import Prelude (class Functor, Unit, Void, bind, const, discard, eq, flip, identity, mempty, negate, pure, show, unit, void, ($), (/=), (<$>), (<<<), (<>), (>))
-import Projects (handleAction, render) as Projects
+import Projects (handleAction) as Projects
 import Projects.Types (Action(..), State, _projects, emptyState) as Projects
 import Projects.Types (Lang(..))
 import Router (Route, SubRoute)
@@ -76,7 +78,7 @@ import Simulation.Types as ST
 import StaticData (bufferLocalStorageKey, gistIdLocalStorageKey, jsBufferLocalStorageKey, marloweBufferLocalStorageKey, showHomePageLocalStorageKey)
 import StaticData as StaticData
 import Text.Pretty (pretty)
-import Types (Action(..), ChildSlots, FrontendState(FrontendState), JSCompilationState(..), Query(..), View(..), WebData, _activeJSDemo, _actusBlocklySlot, _authStatus, _blocklySlot, _createGistResult, _gistId, _haskellEditorSlot, _haskellState, _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _loadGistResult, _newProject, _projectName, _projects, _showBottomPanel, _showHomePage, _simulationState, _view, _walletSlot)
+import Types (Action(..), ChildSlots, FrontendState(FrontendState), JSCompilationState(..), ModalView(..), Query(..), View(..), WebData, _activeJSDemo, _actusBlocklySlot, _authStatus, _blocklySlot, _createGistResult, _gistId, _haskellEditorSlot, _haskellState, _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _loadGistResult, _newProject, _projectName, _projects, _showBottomPanel, _showHomePage, _showModal, _simulationState, _view, _walletSlot)
 import Wallet as Wallet
 
 initialState :: FrontendState
@@ -99,6 +101,7 @@ initialState =
     , createGistResult: NotAsked
     , loadGistResult: Right NotAsked
     , projectName: "Untitled Project"
+    , showModal: Nothing
     }
 
 ------------------------------------------------------------
@@ -169,14 +172,6 @@ handleSubRoute _ Router.Blockly = selectView BlocklyEditor
 handleSubRoute _ Router.ActusBlocklyEditor = selectView ActusBlocklyEditor
 
 handleSubRoute _ Router.Wallets = selectView WalletEmulator
-
-handleSubRoute settings Router.Projects = do
-  selectView Projects
-  toProjects $ Projects.handleAction settings Projects.LoadProjects
-
-handleSubRoute _ Router.NewProject = selectView NewProject
-
-handleSubRoute _ Router.Demos = selectView Demos
 
 handleRoute ::
   forall m.
@@ -388,9 +383,9 @@ handleAction s (NewProjectAction action@(NewProject.CreateProject lang)) = do
 
 handleAction s (NewProjectAction action) = toNewProject $ NewProject.handleAction s action
 
-handleAction s (DemosAction action@Demos.LoadProject) = selectView Projects
+handleAction s (DemosAction action@Demos.LoadProject) = pure unit
 
-handleAction s (DemosAction action@Demos.NewProject) = selectView NewProject
+handleAction s (DemosAction action@Demos.NewProject) = pure unit
 
 handleAction s (DemosAction action@(Demos.LoadDemo lang (Demos.Demo key))) = do
   for_ (Map.lookup key StaticData.demoFiles) \contents -> HaskellEditor.editorSetValue contents
@@ -405,6 +400,10 @@ handleAction settings CheckAuthStatus = do
   checkAuthStatus settings
 
 handleAction settings (GistAction subEvent) = handleGistAction settings subEvent
+
+handleAction _ (OpenModal modal) = assign _showModal $ Just modal
+
+handleAction _ CloseModal = assign _showModal Nothing
 
 selectLanguageView :: Lang -> Maybe View
 selectLanguageView Haskell = Just HaskellEditor
@@ -545,9 +544,6 @@ selectView view = do
       BlocklyEditor -> Router.Blockly
       WalletEmulator -> Router.Wallets
       ActusBlocklyEditor -> Router.ActusBlocklyEditor
-      Projects -> Router.Projects
-      NewProject -> Router.NewProject
-      Demos -> Router.Demos
   liftEffect $ Routing.setHash (RT.print Router.route { subroute, gistId: Nothing })
   assign _view view
   case view of
@@ -564,9 +560,6 @@ selectView view = do
     BlocklyEditor -> void $ query _blocklySlot unit (Blockly.Resize unit)
     WalletEmulator -> pure unit
     ActusBlocklyEditor -> void $ query _actusBlocklySlot unit (ActusBlockly.Resize unit)
-    Projects -> pure unit
-    NewProject -> pure unit
-    Demos -> pure unit
 
 render ::
   forall m.
@@ -576,130 +569,84 @@ render ::
   ComponentHTML Action ChildSlots m
 render settings state =
   div [ class_ (ClassName "site-wrap") ]
-    [ header [ classes [ noMargins, aHorizontal ] ]
-        [ div [ class_ aHorizontal ]
-            [ div [ class_ (ClassName "marlowe-logo") ]
-                [ svg [ SVG.width (SVG.Length 50.0), SVG.height (SVG.Length 41.628), SVG.viewBox (SVG.Box { x: 0, y: 0, width: 60, height: 42 }) ]
-                    [ defs []
-                        [ linearGradient [ id_ "marlowe__linear-gradient", x1 (SVG.Length 0.5), x2 (SVG.Length 0.5), y2 (SVG.Length 1.0), gradientUnits ObjectBoundingBox ]
-                            [ stop [ offset (SVG.Length 0.221), stopColour "#832dc4" ] []
-                            , stop [ offset (SVG.Length 0.377), stopColour "#5e35b8" ] []
-                            , stop [ offset (SVG.Length 0.543), stopColour "#3f3dad" ] []
-                            , stop [ offset (SVG.Length 0.704), stopColour "#2942a6" ] []
-                            , stop [ offset (SVG.Length 0.857), stopColour "#1c45a2" ] []
-                            , stop [ offset (SVG.Length 0.994), stopColour "#1746a0" ] []
-                            ]
-                        ]
-                    , path
-                        [ id_ "prefix__marlowe-logo"
-                        , d "M90.464 35.544c1.02 0 2.232.024 2.736.072V30.4a42.042 42.042 0 00-30.06 10.124c-8.88-7.68-20.784-10.992-29.916-9.96v4.884c.516-.036 1.308-.06 2.208-.06h.048l.156-.012.2.012a19.663 19.663 0 012.264.112h.1c12.324 1.488 21.984 7.212 28.7 17.556a236 236 0 00-3.792 6.3c-.756-1.236-2.832-5.04-3.672-6.444a44.98 44.98 0 012.028-3.06c-1.284-1.26-2.484-2.4-3.732-3.588-.9 1.116-1.62 1.992-2.412 2.964-3.36-2.28-6.576-4.476-10.392-5.628A29.291 29.291 0 0033.2 42.228v29.688h4.98V47.424c5.028.876 10.332 2.736 14.472 6.672a46.733 46.733 0 00-3.9 17.832h5.172a34.82 34.82 0 012.628-13.644 43.568 43.568 0 013.24 7.884 44.62 44.62 0 01.864 5.736h2.3v-8.268h.072a.77.77 0 11.84-.768.759.759 0 01-.684.768h.072V71.9h-.3l.072.012h.228V71.9h2.4a24.792 24.792 0 014.128-13.728 42.589 42.589 0 012.7 13.74h5.296c0-5.088-1.992-14.6-4.092-18.552a22.176 22.176 0 0114.244-5.616c0 4-.012 8 0 12.012.012 4.032-.084 8.076.072 12.144h5.2V42.144a35.632 35.632 0 00-12.012 1.512 33.507 33.507 0 00-10.468 5.664c-1.092-1.9-2.316-3.432-3.564-5.244a37.471 37.471 0 0120.892-8.46c.504-.048 1.392-.072 2.412-.072z"
-                        , transform (Translate { x: (negate 33.2), y: (negate 30.301) })
-                        ]
-                        []
-                    ]
-                ]
-            , h1 [ classes [ spaceLeft, uppercase, spaceRight ] ] [ text "Marlowe Playground" ]
-            , img [ src iohkLogo ]
-            ]
-        , a [ href "./tutorial/index.html", target "_blank", classes [] ] [ text "Tutorial" ]
-        ]
-    , globalActions (state ^. _view)
-    , main []
-        [ nav [ id_ "panel-nav" ]
-            [ div
-                [ classes ([ tabLink, aCenter, flexCol, ClassName "simulation-tab" ] <> isActiveTab Simulation)
-                , onClick $ const $ Just $ ChangeView Simulation
-                ]
-                [ div [ class_ tabIcon ] []
-                , div [] [ text "Simulation" ]
-                ]
-            , div
-                [ classes ([ tabLink, aCenter, flexCol, ClassName "js-tab" ] <> isActiveTab JSEditor)
-                , onClick $ const $ Just $ ChangeView JSEditor
-                ]
-                [ div [ class_ tabIcon ] []
-                , div [] [ text "JS Editor" ]
-                ]
-            , div
-                [ classes ([ tabLink, aCenter, flexCol, ClassName "haskell-tab" ] <> isActiveTab HaskellEditor)
-                , onClick $ const $ Just $ ChangeView HaskellEditor
-                ]
-                [ div [ class_ tabIcon ] []
-                , div [] [ text "Haskell Editor" ]
-                ]
-            , div
-                [ classes ([ tabLink, aCenter, flexCol, ClassName "blockly-tab" ] <> isActiveTab BlocklyEditor)
-                , onClick $ const $ Just $ ChangeView BlocklyEditor
-                ]
-                [ div [ class_ tabIcon ] []
-                , div [] [ text "Blockly" ]
-                ]
-            , div
-                [ classes ([ tabLink, aCenter, flexCol, ClassName "actus-blockly-tab" ] <> isActiveTab ActusBlocklyEditor)
-                , onClick $ const $ Just $ ChangeView ActusBlocklyEditor
-                ]
-                [ div [ class_ tabIcon ] []
-                , div [] [ text "Labs" ]
-                ]
-            , div
-                [ classes ([ tabLink, aCenter, flexCol, ClassName "wallet-tab" ] <> isActiveTab WalletEmulator)
-                , onClick $ const $ Just $ ChangeView WalletEmulator
-                ]
-                [ div [ class_ tabIcon ] []
-                , div [] [ text "Wallets" ]
-                ]
-            ]
-        , section [ id_ "main-panel" ]
-            [ tabContents HomePage [ Home.render state ]
-            , tabContents Simulation
-                [ div []
-                    [ renderSubmodule _simulationState SimulationAction Simulation.render state ]
-                ]
-            , tabContents HaskellEditor
-                [ div []
-                    [ renderSubmodule _haskellState HaskellAction HaskellEditor.render state ]
-                , renderSubmodule _haskellState HaskellAction HaskellEditor.bottomPanel state
-                ]
-            , tabContents JSEditor
-                [ div [] (JSEditor.render state)
-                , JSEditor.bottomPanel state
-                ]
-            , tabContents BlocklyEditor
-                [ div []
-                    [ slot _blocklySlot unit (blockly MB.rootBlockName MB.blockDefinitions) unit (Just <<< HandleBlocklyMessage)
-                    , MB.toolbox
-                    , MB.workspaceBlocks
-                    ]
-                ]
-            , tabContents ActusBlocklyEditor
-                [ div []
-                    [ slot _actusBlocklySlot unit (ActusBlockly.blockly AMB.rootBlockName AMB.blockDefinitions) unit (Just <<< HandleActusBlocklyMessage)
-                    , AMB.toolbox
-                    , AMB.workspaceBlocks
-                    ]
-                ]
-            , tabContents WalletEmulator
-                [ div [ classes [ ClassName "full-height" ] ]
-                    [ slot _walletSlot unit Wallet.mkComponent unit (Just <<< HandleWalletMessage) ]
-                ]
-            , tabContents Projects [ renderSubmodule _projects ProjectsAction Projects.render state ]
-            , tabContents NewProject [ renderSubmodule _newProject NewProjectAction NewProject.render state ]
-            , tabContents Demos [ renderSubmodule identity DemosAction Demos.render state ]
-            ]
-        ]
-    ]
+    ( [ header [ classes [ noMargins, aHorizontal ] ]
+          [ div [ class_ aHorizontal ]
+              [ div [ class_ (ClassName "marlowe-logo") ]
+                  [ svg [ SVG.width (SVG.Length 50.0), SVG.height (SVG.Length 41.628), SVG.viewBox (SVG.Box { x: 0, y: 0, width: 60, height: 42 }) ]
+                      [ defs []
+                          [ linearGradient [ id_ "marlowe__linear-gradient", x1 (SVG.Length 0.5), x2 (SVG.Length 0.5), y2 (SVG.Length 1.0), gradientUnits ObjectBoundingBox ]
+                              [ stop [ offset (SVG.Length 0.221), stopColour "#832dc4" ] []
+                              , stop [ offset (SVG.Length 0.377), stopColour "#5e35b8" ] []
+                              , stop [ offset (SVG.Length 0.543), stopColour "#3f3dad" ] []
+                              , stop [ offset (SVG.Length 0.704), stopColour "#2942a6" ] []
+                              , stop [ offset (SVG.Length 0.857), stopColour "#1c45a2" ] []
+                              , stop [ offset (SVG.Length 0.994), stopColour "#1746a0" ] []
+                              ]
+                          ]
+                      , path
+                          [ id_ "prefix__marlowe-logo"
+                          , d "M90.464 35.544c1.02 0 2.232.024 2.736.072V30.4a42.042 42.042 0 00-30.06 10.124c-8.88-7.68-20.784-10.992-29.916-9.96v4.884c.516-.036 1.308-.06 2.208-.06h.048l.156-.012.2.012a19.663 19.663 0 012.264.112h.1c12.324 1.488 21.984 7.212 28.7 17.556a236 236 0 00-3.792 6.3c-.756-1.236-2.832-5.04-3.672-6.444a44.98 44.98 0 012.028-3.06c-1.284-1.26-2.484-2.4-3.732-3.588-.9 1.116-1.62 1.992-2.412 2.964-3.36-2.28-6.576-4.476-10.392-5.628A29.291 29.291 0 0033.2 42.228v29.688h4.98V47.424c5.028.876 10.332 2.736 14.472 6.672a46.733 46.733 0 00-3.9 17.832h5.172a34.82 34.82 0 012.628-13.644 43.568 43.568 0 013.24 7.884 44.62 44.62 0 01.864 5.736h2.3v-8.268h.072a.77.77 0 11.84-.768.759.759 0 01-.684.768h.072V71.9h-.3l.072.012h.228V71.9h2.4a24.792 24.792 0 014.128-13.728 42.589 42.589 0 012.7 13.74h5.296c0-5.088-1.992-14.6-4.092-18.552a22.176 22.176 0 0114.244-5.616c0 4-.012 8 0 12.012.012 4.032-.084 8.076.072 12.144h5.2V42.144a35.632 35.632 0 00-12.012 1.512 33.507 33.507 0 00-10.468 5.664c-1.092-1.9-2.316-3.432-3.564-5.244a37.471 37.471 0 0120.892-8.46c.504-.048 1.392-.072 2.412-.072z"
+                          , transform (Translate { x: (negate 33.2), y: (negate 30.301) })
+                          ]
+                          []
+                      ]
+                  ]
+              , h1 [ classes [ spaceLeft, uppercase, spaceRight ] ] [ text "Marlowe Playground" ]
+              , h2_ [ text (state ^. _projectName) ]
+              ]
+          , a [ href "./tutorial/index.html", target "_blank", classes [] ] [ text "Tutorial" ]
+          ]
+      , main []
+          [ globalActions (state ^. _view)
+          , section [ id_ "main-panel" ]
+              [ tabContents HomePage [ Home.render state ]
+              , tabContents Simulation
+                  [ div []
+                      [ renderSubmodule _simulationState SimulationAction Simulation.render state ]
+                  ]
+              , tabContents HaskellEditor
+                  [ div []
+                      [ renderSubmodule _haskellState HaskellAction HaskellEditor.render state ]
+                  , renderSubmodule _haskellState HaskellAction HaskellEditor.bottomPanel state
+                  ]
+              , tabContents JSEditor
+                  [ div [] (JSEditor.render state)
+                  , JSEditor.bottomPanel state
+                  ]
+              , tabContents BlocklyEditor
+                  [ div []
+                      [ slot _blocklySlot unit (blockly MB.rootBlockName MB.blockDefinitions) unit (Just <<< HandleBlocklyMessage)
+                      , MB.toolbox
+                      , MB.workspaceBlocks
+                      ]
+                  ]
+              , tabContents ActusBlocklyEditor
+                  [ div []
+                      [ slot _actusBlocklySlot unit (ActusBlockly.blockly AMB.rootBlockName AMB.blockDefinitions) unit (Just <<< HandleActusBlocklyMessage)
+                      , AMB.toolbox
+                      , AMB.workspaceBlocks
+                      ]
+                  ]
+              , tabContents WalletEmulator
+                  [ div [ classes [ ClassName "full-height" ] ]
+                      [ slot _walletSlot unit Wallet.mkComponent unit (Just <<< HandleWalletMessage) ]
+                  ]
+              ]
+          ]
+      ]
+        <> modal (state ^. _showModal)
+    )
   where
   isActiveView activeView = state ^. _view <<< to (eq activeView)
 
   isActiveTab activeView = if isActiveView activeView then [ active ] else []
 
-  tabContents activeView contents = if isActiveView activeView then div [ classes [ fullHeight ] ] contents else div [ classes [ hide ] ] contents
+  tabContents activeView contents = if isActiveView activeView then div [ classes [ fullHeight, Classes.scroll ] ] contents else div [ classes [ hide ] ] contents
 
   globalActions HaskellEditor =
     div [ class_ (ClassName "global-actions") ]
       [ div [ classes [ ClassName "group" ] ]
-          [ h2_ [ text (state ^. _projectName) ]
-          , GistButtons.authButton state
+          [ GistButtons.authButton state
           ]
       , div [ classes [ ClassName "group" ] ]
           [ renderSubmodule _haskellState HaskellAction HaskellEditor.editorOptions state
@@ -710,8 +657,8 @@ render settings state =
   globalActions Simulation =
     div [ class_ (ClassName "global-actions") ]
       [ div [ classes [ ClassName "group" ] ]
-          [ h2_ [ text (state ^. _projectName) ]
-          , GistButtons.authButton state
+          [ GistButtons.authButton state
+          , menuBar state
           ]
       , div [ classes [ ClassName "group" ] ]
           [ renderSubmodule _simulationState SimulationAction Simulation.editorOptions state
@@ -720,3 +667,34 @@ render settings state =
       ]
 
   globalActions _ = text ""
+
+  modal Nothing = []
+
+  modal (Just _) =
+    [ div [ classes [ ClassName "modal" ] ]
+        [ div [ classes [ ClassName "modal-content" ], onClick $ const $ Just CloseModal ]
+            [ text "hello" ]
+        ]
+    ]
+
+menuBar :: forall p. FrontendState -> HTML p Action
+menuBar state =
+  div []
+    ( [ openModal NewProject "New Project"
+      , openModal OpenProject "Open Project"
+      , openModal OpenDemo "Open Demo"
+      , openModal RenameProject "Rename"
+      ]
+        <> save (previewOn state (_authStatus <<< _Success <<< authStatusAuthRole <<< _GithubUser))
+        <> saveAs (previewOn state (_authStatus <<< _Success <<< authStatusAuthRole <<< _GithubUser))
+    )
+  where
+  openModal modal name = a [ onClick $ const $ Just $ OpenModal modal ] [ text name ]
+
+  save Nothing = [ text "not logged in" ]
+
+  save _ = [ text "logged in" ]
+
+  saveAs Nothing = [ text "not logged in" ]
+
+  saveAs _ = [ text "logged in" ]
