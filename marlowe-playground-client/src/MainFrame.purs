@@ -1,6 +1,6 @@
 module MainFrame (mkMainFrame) where
 
-import Auth (_AuthStatus, _GithubUser, authStatusAuthRole)
+import Auth (_GithubUser, authStatusAuthRole)
 import Control.Monad.Except (ExceptT(..), lift, runExceptT)
 import Control.Monad.Maybe.Extra (hoistMaybe)
 import Control.Monad.Maybe.Trans (runMaybeT)
@@ -8,23 +8,21 @@ import Control.Monad.Reader (runReaderT)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either, note)
 import Data.Foldable (for_, traverse_)
-import Data.Lens (_Right, assign, has, is, preview, previewOn, to, use, view, (^.))
+import Data.Lens (_Right, assign, has, preview, previewOn, to, use, view, (^.))
 import Data.Lens.Extra (peruse)
 import Data.Lens.Index (ix)
 import Data.List.NonEmpty as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (unwrap)
-import Debug.Trace (trace)
-import Demos (handleAction) as Demos
+import Demos.State (handleAction, render) as Demos
 import Demos.Types (Action(..), Demo(..)) as Demos
 import Effect.Aff.Class (class MonadAff)
-import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Class (class MonadEffect)
 import Gist (Gist, _GistId, gistDescription, gistId)
-import GistButtons as GistButtons
 import Gists (GistAction(..))
 import Gists as Gists
-import Halogen (ClassName(..), Component, ComponentHTML, get, liftEffect, query, subscribe, subscribe')
+import Halogen (Component, ComponentHTML, get, liftEffect, query, subscribe, subscribe')
 import Halogen as H
 import Halogen.ActusBlockly as ActusBlockly
 import Halogen.Analytics (handleActionWithAnalyticsTracking)
@@ -33,7 +31,7 @@ import Halogen.Blockly as Blockly
 import Halogen.Classes (aHorizontal, active, fullHeight, fullWidth, hide, noMargins, spaceLeft, spaceRight, uppercase)
 import Halogen.Classes as Classes
 import Halogen.Extra (mapSubmodule, renderSubmodule)
-import Halogen.HTML (ClassName(ClassName), HTML, a, div, h1, h1_, h2, h2_, header, main, section, slot, text)
+import Halogen.HTML (ClassName(ClassName), HTML, a, div, h1_, h2, header, main, section, slot, text)
 import Halogen.HTML.Events (onClick)
 import Halogen.HTML.Properties (class_, classes, href, id_, target)
 import Halogen.Monaco (KeyBindings(DefaultBindings))
@@ -42,35 +40,39 @@ import Halogen.Query (HalogenM)
 import Halogen.Query.EventSource (affEventSource, emit, eventListenerEventSource)
 import Halogen.SVG (GradientUnits(..), Translate(..), d, defs, gradientUnits, linearGradient, offset, path, stop, stopColour, svg, transform, x1, x2, y2)
 import Halogen.SVG as SVG
-import HaskellEditor as HaskellEditor
+import HaskellEditor.State as HaskellEditor
 import HaskellEditor.Types (_compilationResult)
 import HaskellEditor.Types as HE
 import Home as Home
+import Icons (Icon(..), icon)
 import JSEditor as JSEditor
 import Language.Haskell.Interpreter (_InterpreterResult)
 import Language.Haskell.Monaco as HM
 import Language.Javascript.Interpreter as JSI
 import LocalStorage as LocalStorage
-import Marlowe (SPParams_, getApiGists, getApiGistsByGistId)
+import Marlowe (SPParams_, getApiGistsByGistId)
 import Marlowe as Server
 import Marlowe.ActusBlockly as AMB
 import Marlowe.Blockly as MB
 import Marlowe.Gists (mkNewGist, playgroundFiles)
 import Marlowe.Parser (parseContract)
-import Network.RemoteData (RemoteData(..), _Success)
+import Network.RemoteData (RemoteData(..), _Loading, _Success)
 import Network.RemoteData as RemoteData
-import NewProject (handleAction, render) as NewProject
+import NewProject.State (handleAction, render) as NewProject
 import NewProject.Types (Action(..), State, _error, _projectName, emptyState) as NewProject
 import Prelude (class Functor, Unit, Void, bind, const, discard, eq, flip, identity, map, mempty, negate, otherwise, pure, show, unit, void, ($), (/=), (<$>), (<<<), (<>), (=<<), (==), (>))
-import Projects (handleAction) as Projects
-import Projects as Project
+import Projects.State (handleAction, render) as Projects
 import Projects.Types (Action(..), State, _projects, emptyState) as Projects
 import Projects.Types (Lang(..))
+import Rename.State (handleAction, render) as Rename
+import Rename.Types (Action(..), State, _error, _projectName, emptyState) as Rename
 import Router (Route, SubRoute)
 import Router as Router
 import Routing.Duplex as RD
 import Routing.Duplex as RT
 import Routing.Hash as Routing
+import SaveAs.State (handleAction, render) as SaveAs
+import SaveAs.Types (Action(..), State, _error, _projectName, emptyState) as SaveAs
 import Servant.PureScript.Ajax (AjaxError, ErrorDescription(..), errorToString, runAjaxError)
 import Servant.PureScript.Settings (SPSettings_)
 import Simulation as Simulation
@@ -80,7 +82,7 @@ import Simulation.Types as ST
 import StaticData (bufferLocalStorageKey, gistIdLocalStorageKey, jsBufferLocalStorageKey, marloweBufferLocalStorageKey, showHomePageLocalStorageKey)
 import StaticData as StaticData
 import Text.Pretty (pretty)
-import Types (Action(..), ChildSlots, FrontendState(FrontendState), JSCompilationState(..), ModalView(..), Query(..), View(..), WebData, _activeJSDemo, _actusBlocklySlot, _authStatus, _blocklySlot, _createGistResult, _gistId, _haskellEditorSlot, _haskellState, _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _loadGistResult, _newProject, _projectName, _projects, _showBottomPanel, _showHomePage, _showModal, _simulationState, _view, _walletSlot)
+import Types (Action(..), ChildSlots, FrontendState(FrontendState), JSCompilationState(..), ModalView(..), Query(..), View(..), WebData, _activeJSDemo, _actusBlocklySlot, _authStatus, _blocklySlot, _createGistResult, _gistId, _haskellEditorSlot, _haskellState, _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _loadGistResult, _newProject, _projectName, _projects, _rename, _saveAs, _showBottomPanel, _showHomePage, _showModal, _simulationState, _view, _walletSlot)
 import Wallet as Wallet
 import Web.HTML (window) as Web
 import Web.HTML.HTMLDocument (toEventTarget)
@@ -103,6 +105,8 @@ initialState =
     , showHomePage: true
     , projects: Projects.emptyState
     , newProject: NewProject.emptyState
+    , rename: Rename.emptyState
+    , saveAs: SaveAs.emptyState
     , authStatus: NotAsked
     , gistId: Nothing
     , createGistResult: NotAsked
@@ -159,6 +163,18 @@ toDemos ::
   Functor m =>
   HalogenM FrontendState Demos.Action ChildSlots Void m a -> HalogenM FrontendState Action ChildSlots Void m a
 toDemos = mapSubmodule identity DemosAction
+
+toRename ::
+  forall m a.
+  Functor m =>
+  HalogenM Rename.State Rename.Action ChildSlots Void m a -> HalogenM FrontendState Action ChildSlots Void m a
+toRename = mapSubmodule _rename RenameAction
+
+toSaveAs ::
+  forall m a.
+  Functor m =>
+  HalogenM SaveAs.State SaveAs.Action ChildSlots Void m a -> HalogenM FrontendState Action ChildSlots Void m a
+toSaveAs = mapSubmodule _saveAs SaveAsAction
 
 handleSubRoute ::
   forall m.
@@ -230,7 +246,7 @@ handleAction settings Init = do
   checkAuthStatus settings
 
 handleAction settings (HandleKey sid ev)
-  | KE.key ev == "Escape" = trace "Handle Escape" \_ -> assign _showModal Nothing
+  | KE.key ev == "Escape" = assign _showModal Nothing
   | otherwise = pure unit
 
 handleAction settings (ShowHomePageInFuture b) = do
@@ -363,14 +379,20 @@ handleAction s (HandleActusBlocklyMessage (ActusBlockly.CurrentTerms flavour ter
         _ -> void $ query _actusBlocklySlot unit (ActusBlockly.SetError "Unknown server error!" unit)
 
 handleAction s (ProjectsAction action@(Projects.LoadProject lang gistId)) = do
+  assign _createGistResult Loading
   res <-
     runExceptT
       $ do
           gist <- flip runReaderT s $ getApiGistsByGistId gistId
           lift $ loadGist gist
+          pure gist
   case res of
-    Right _ -> pure unit
-    Left error -> assign (_projects <<< Projects._projects) (Failure "Failed to load gist")
+    Right gist -> do
+      assign _createGistResult $ Success gist
+      assign _showModal Nothing
+    Left error -> do
+      assign _createGistResult $ Failure error
+      assign (_projects <<< Projects._projects) (Failure "Failed to load gist")
   toProjects $ Projects.handleAction s action
   traverse_ selectView $ selectLanguageView lang
 
@@ -388,7 +410,9 @@ handleAction s (NewProjectAction action@(NewProject.CreateProject lang)) = do
   case res of
     Just gist -> do
       liftEffect $ LocalStorage.setItem gistIdLocalStorageKey (gist ^. (gistId <<< _GistId))
+      assign _gistId $ Just (gist ^. gistId)
       traverse_ selectView $ selectLanguageView lang
+      assign _showModal Nothing
     Nothing -> do
       assign (_newProject <<< NewProject._error) (Just "Could not create new project")
       assign _projectName currentProject
@@ -397,10 +421,6 @@ handleAction s (NewProjectAction action@(NewProject.CreateProject lang)) = do
 
 handleAction s (NewProjectAction action) = toNewProject $ NewProject.handleAction s action
 
-handleAction s (DemosAction action@Demos.LoadProject) = pure unit
-
-handleAction s (DemosAction action@Demos.NewProject) = pure unit
-
 handleAction s (DemosAction action@(Demos.LoadDemo lang (Demos.Demo key))) = do
   for_ (Map.lookup key StaticData.demoFiles) \contents -> HaskellEditor.editorSetValue contents
   for_ (Map.lookup key StaticData.demoFilesJS) \contents -> void $ query _jsEditorSlot unit (Monaco.SetText contents unit)
@@ -408,23 +428,59 @@ handleAction s (DemosAction action@(Demos.LoadDemo lang (Demos.Demo key))) = do
     Simulation.editorSetValue contents
     void $ query _blocklySlot unit (Blockly.SetCode contents unit)
   toDemos $ Demos.handleAction s action
+  assign _showModal Nothing
   traverse_ selectView $ selectLanguageView lang
+
+handleAction s (DemosAction action) = toDemos $ Demos.handleAction s action
+
+handleAction s (RenameAction action@Rename.SaveProject) = do
+  currentName <- use _projectName
+  projectName <- use (_rename <<< Rename._projectName)
+  assign _projectName projectName
+  handleGistAction s PublishGist
+  res <- peruse (_createGistResult <<< _Success)
+  case res of
+    Just gist -> assign _showModal Nothing
+    Nothing -> do
+      assign (_rename <<< Rename._error) (Just "Could not save project")
+      assign _projectName currentName
+  toRename $ Rename.handleAction s action
+
+handleAction s (RenameAction action) = toRename $ Rename.handleAction s action
+
+handleAction s (SaveAsAction action@SaveAs.SaveProject) = do
+  currentName <- use _projectName
+  currentGistId <- use _gistId
+  projectName <- use (_rename <<< SaveAs._projectName)
+  assign _projectName projectName
+  handleGistAction s PublishGist
+  res <- peruse (_createGistResult <<< _Success)
+  case res of
+    Just gist -> do
+      liftEffect $ LocalStorage.setItem gistIdLocalStorageKey (gist ^. (gistId <<< _GistId))
+      assign _showModal Nothing
+    Nothing -> do
+      assign (_rename <<< SaveAs._error) (Just "Could not save project")
+      assign _projectName currentName
+      assign _gistId currentGistId
+  toSaveAs $ SaveAs.handleAction s action
+
+handleAction s (SaveAsAction action) = toSaveAs $ SaveAs.handleAction s action
 
 handleAction settings CheckAuthStatus = do
   checkAuthStatus settings
 
 handleAction settings (GistAction subEvent) = handleGistAction settings subEvent
 
-handleAction settings (OpenModal OpenProject) = trace "OpenProject" \_ -> do
+handleAction settings (OpenModal OpenProject) = do
   assign _showModal $ Just OpenProject
   toProjects $ Projects.handleAction settings Projects.LoadProjects
-  -- assign (_projects <<< Projects._projects) Loading
-  -- resp <- flip runReaderT settings $ runExceptT getApiGists
-  -- assign (_projects <<< Projects._projects) $ lmap errorToString $ RemoteData.fromEither resp
 
 handleAction _ (OpenModal modal) = assign _showModal $ Just modal
 
-handleAction _ CloseModal = trace "CloseModal" \_ -> assign _showModal Nothing
+handleAction _ CloseModal = assign _showModal Nothing
+
+handleAction _ (ChangeProjectName name) = assign _projectName name
 
 selectLanguageView :: Lang -> Maybe View
 selectLanguageView Haskell = Just HaskellEditor
@@ -615,7 +671,7 @@ render settings state =
                       ]
                   , h2 [ classes [ spaceLeft, uppercase, spaceRight ] ] [ text "Marlowe Playground" ]
                   ]
-              , h1 [ classes [ ClassName "project-title" ] ] [ text (state ^. _projectName) ]
+              , projectTitle
               , a [ href "./tutorial/index.html", target "_blank", classes [ ClassName "external-links" ] ] [ text "Tutorial" ]
               ]
           ]
@@ -661,6 +717,16 @@ render settings state =
         <> modal (state ^. _showModal)
     )
   where
+  projectTitle =
+    let
+      title = state ^. _projectName
+
+      isLoading = has (_createGistResult <<< _Loading) state
+
+      spinner = if isLoading then icon Spinner else div [ classes [ ClassName "empty" ] ] []
+    in
+      div [ classes [ ClassName "project-title" ] ] [ h1_ [ text title ], spinner ]
+
   isActiveView activeView = state ^. _view <<< to (eq activeView)
 
   isActiveTab activeView = if isActiveView activeView then [ active ] else []
@@ -689,7 +755,7 @@ render settings state =
 
   modal (Just view) =
     [ div [ classes [ ClassName "modal" ] ]
-        [ div [ classes [ ClassName "modal-container" ], onClick $ const $ Just CloseModal ]
+        [ div [ classes [ ClassName "modal-container" ] ]
             [ div [ classes [ ClassName "modal-content" ] ]
                 [ a [ class_ (ClassName "close"), onClick $ const $ Just CloseModal ] [ text "x" ]
                 , modalContent view
@@ -700,13 +766,13 @@ render settings state =
 
   modalContent NewProject = renderSubmodule _newProject NewProjectAction NewProject.render state
 
-  modalContent OpenProject = renderSubmodule _projects ProjectsAction Project.render state
+  modalContent OpenProject = renderSubmodule _projects ProjectsAction Projects.render state
 
-  modalContent OpenDemo = text "OpenDemo"
+  modalContent OpenDemo = renderSubmodule identity DemosAction Demos.render state
 
-  modalContent RenameProject = text "RenameProject"
+  modalContent RenameProject = renderSubmodule _rename RenameAction Rename.render state
 
-  modalContent SaveProjectAs = text "SaveProjectAs"
+  modalContent SaveProjectAs = renderSubmodule _saveAs SaveAsAction SaveAs.render state
 
   modalContent GithubLogin = text "GithubLogin"
 

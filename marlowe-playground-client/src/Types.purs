@@ -30,7 +30,9 @@ import Network.RemoteData (RemoteData)
 import NewProject.Types as NewProject
 import Prelude (class Eq, class Show, Unit, eq, show, (<<<), ($))
 import Projects.Types as Projects
+import Rename.Types as Rename
 import Router (Route)
+import SaveAs.Types as SaveAs
 import Servant.PureScript.Ajax (AjaxError)
 import Simulation.Types as Simulation
 import Wallet as Wallet
@@ -78,11 +80,14 @@ data Action
   | ProjectsAction Projects.Action
   | NewProjectAction NewProject.Action
   | DemosAction Demos.Action
+  | RenameAction Rename.Action
+  | SaveAsAction SaveAs.Action
   -- Gist support.
   | CheckAuthStatus
   | GistAction GistAction
   | OpenModal ModalView
   | CloseModal
+  | ChangeProjectName String
 
 -- | Here we decide which top-level queries to track as GA events, and
 -- how to classify them.
@@ -106,10 +111,13 @@ instance actionIsEvent :: IsEvent Action where
   toEvent (ProjectsAction action) = toEvent action
   toEvent (NewProjectAction action) = toEvent action
   toEvent (DemosAction action) = toEvent action
+  toEvent (RenameAction action) = toEvent action
+  toEvent (SaveAsAction action) = toEvent action
   toEvent CheckAuthStatus = Just $ defaultEvent "CheckAuthStatus"
   toEvent (GistAction _) = Just $ defaultEvent "GistAction"
   toEvent (OpenModal view) = Just $ (defaultEvent (show view)) { category = Just "OpenModal" }
   toEvent CloseModal = Just $ defaultEvent "CloseModal"
+  toEvent (ChangeProjectName _) = Just $ defaultEvent "ChangeProjectName"
 
 ------------------------------------------------------------
 type ChildSlots
@@ -180,6 +188,8 @@ newtype FrontendState
   , showHomePage :: Boolean
   , projects :: Projects.State
   , newProject :: NewProject.State
+  , rename :: Rename.State
+  , saveAs :: SaveAs.State
   , authStatus :: WebData AuthStatus
   , gistId :: Maybe GistId
   , createGistResult :: WebData Gist
@@ -231,6 +241,12 @@ _projects = _Newtype <<< prop (SProxy :: SProxy "projects")
 
 _newProject :: Lens' FrontendState NewProject.State
 _newProject = _Newtype <<< prop (SProxy :: SProxy "newProject")
+
+_rename :: Lens' FrontendState Rename.State
+_rename = _Newtype <<< prop (SProxy :: SProxy "rename")
+
+_saveAs :: Lens' FrontendState SaveAs.State
+_saveAs = _Newtype <<< prop (SProxy :: SProxy "saveAs")
 
 _authStatus :: Lens' FrontendState (WebData AuthStatus)
 _authStatus = _Newtype <<< prop (SProxy :: SProxy "authStatus")

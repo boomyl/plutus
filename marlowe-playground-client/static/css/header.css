@@ -19,8 +19,21 @@ header {
 }
 
 .project-title {
-  flex: 1;
   text-align: center;
+  flex: 0.4;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+}
+
+.project-title i {
+  height: 1em;
+  width: 1em;
+}
+
+.project-title .empty {
+  height: 1em;
+  width: 1em;
 }
 
 .external-links {
@@ -50,7 +63,9 @@ header {
 }
 
 .global-actions button {
-  height: 2rem;
+  height: 2em;
+  padding: 0.4em 0em;
+  min-width: 8em;
 }
 
 .save-button-group {
