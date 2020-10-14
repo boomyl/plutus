@@ -18,27 +18,27 @@ import Data.Newtype (unwrap)
 import Demos (handleAction) as Demos
 import Demos.Types (Action(..), Demo(..)) as Demos
 import Effect.Aff.Class (class MonadAff)
-import Effect.Class (class MonadEffect)
+import Effect.Class (class MonadEffect, liftEffect)
 import Gist (Gist, _GistId, gistDescription, gistId)
 import GistButtons as GistButtons
 import Gists (GistAction(..))
 import Gists as Gists
-import Halogen (ClassName(..), Component, ComponentHTML, get, liftEffect, query, subscribe)
+import Halogen (ClassName(..), Component, ComponentHTML, get, liftEffect, query, subscribe, subscribe')
 import Halogen as H
 import Halogen.ActusBlockly as ActusBlockly
 import Halogen.Analytics (handleActionWithAnalyticsTracking)
 import Halogen.Blockly (BlocklyMessage(..), blockly)
 import Halogen.Blockly as Blockly
-import Halogen.Classes (aHorizontal, active, fullHeight, hide, noMargins, spaceLeft, spaceRight, uppercase)
+import Halogen.Classes (aHorizontal, active, fullHeight, fullWidth, hide, noMargins, spaceLeft, spaceRight, uppercase)
 import Halogen.Classes as Classes
 import Halogen.Extra (mapSubmodule, renderSubmodule)
-import Halogen.HTML (ClassName(ClassName), HTML, a, div, h1, h2_, header, main, section, slot, text)
+import Halogen.HTML (ClassName(ClassName), HTML, a, div, h1, h1_, h2, h2_, header, main, section, slot, text)
 import Halogen.HTML.Events (onClick)
 import Halogen.HTML.Properties (class_, classes, href, id_, target)
 import Halogen.Monaco (KeyBindings(DefaultBindings))
 import Halogen.Monaco as Monaco
 import Halogen.Query (HalogenM)
-import Halogen.Query.EventSource (affEventSource, emit)
+import Halogen.Query.EventSource (affEventSource, emit, eventListenerEventSource)
 import Halogen.SVG (GradientUnits(..), Translate(..), d, defs, gradientUnits, linearGradient, offset, path, stop, stopColour, svg, transform, x1, x2, y2)
 import Halogen.SVG as SVG
 import HaskellEditor as HaskellEditor
@@ -58,10 +58,11 @@ import Marlowe.Gists (mkNewGist, playgroundFiles)
 import Marlowe.Parser (parseContract)
 import Network.RemoteData (RemoteData(..), _Success)
 import Network.RemoteData as RemoteData
-import NewProject (handleAction) as NewProject
+import NewProject (handleAction, render) as NewProject
 import NewProject.Types (Action(..), State, _error, _projectName, emptyState) as NewProject
-import Prelude (class Functor, Unit, Void, bind, const, discard, eq, flip, identity, mempty, negate, pure, show, unit, void, ($), (/=), (<$>), (<<<), (<>), (>))
+import Prelude (class Functor, Unit, Void, bind, const, discard, eq, flip, identity, map, mempty, negate, otherwise, pure, show, unit, void, ($), (/=), (<$>), (<<<), (<>), (=<<), (==), (>))
 import Projects (handleAction) as Projects
+import Projects as Project
 import Projects.Types (Action(..), State, _projects, emptyState) as Projects
 import Projects.Types (Lang(..))
 import Router (Route, SubRoute)
@@ -80,6 +81,11 @@ import StaticData as StaticData
 import Text.Pretty (pretty)
 import Types (Action(..), ChildSlots, FrontendState(FrontendState), JSCompilationState(..), ModalView(..), Query(..), View(..), WebData, _activeJSDemo, _actusBlocklySlot, _authStatus, _blocklySlot, _createGistResult, _gistId, _haskellEditorSlot, _haskellState, _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _loadGistResult, _newProject, _projectName, _projects, _showBottomPanel, _showHomePage, _showModal, _simulationState, _view, _walletSlot)
 import Wallet as Wallet
+import Web.HTML (window) as Web
+import Web.HTML.HTMLDocument (toEventTarget)
+import Web.HTML.Window (document) as Web
+import Web.UIEvent.KeyboardEvent as KE
+import Web.UIEvent.KeyboardEvent.EventTypes (keyup)
 
 initialState :: FrontendState
 initialState =
@@ -216,8 +222,15 @@ handleAction settings Init = do
     Right { subroute: Router.Home, gistId } -> handleRoute settings { subroute, gistId }
     Right route -> handleRoute settings route
     Left _ -> handleRoute settings { subroute, gistId: Nothing }
+  document <- liftEffect $ Web.document =<< Web.window
+  subscribe' \sid ->
+    eventListenerEventSource keyup (toEventTarget document) (map (HandleKey sid) <<< KE.fromEvent)
   toSimulation $ Simulation.handleAction settings ST.Init
   checkAuthStatus settings
+
+handleAction settings (HandleKey sid ev)
+  | KE.key ev == "Escape" = assign _showModal Nothing
+  | otherwise = pure unit
 
 handleAction settings (ShowHomePageInFuture b) = do
   liftEffect $ LocalStorage.setItem showHomePageLocalStorageKey (show b)
@@ -401,6 +414,10 @@ handleAction settings CheckAuthStatus = do
 
 handleAction settings (GistAction subEvent) = handleGistAction settings subEvent
 
+handleAction settings (OpenModal OpenProject) = do
+  assign _showModal $ Just OpenProject
+  toProjects $ Projects.handleAction settings Projects.LoadProjects
+
 handleAction _ (OpenModal modal) = assign _showModal $ Just modal
 
 handleAction _ CloseModal = assign _showModal Nothing
@@ -570,34 +587,37 @@ render ::
 render settings state =
   div [ class_ (ClassName "site-wrap") ]
     ( [ header [ classes [ noMargins, aHorizontal ] ]
-          [ div [ class_ aHorizontal ]
-              [ div [ class_ (ClassName "marlowe-logo") ]
-                  [ svg [ SVG.width (SVG.Length 50.0), SVG.height (SVG.Length 41.628), SVG.viewBox (SVG.Box { x: 0, y: 0, width: 60, height: 42 }) ]
-                      [ defs []
-                          [ linearGradient [ id_ "marlowe__linear-gradient", x1 (SVG.Length 0.5), x2 (SVG.Length 0.5), y2 (SVG.Length 1.0), gradientUnits ObjectBoundingBox ]
-                              [ stop [ offset (SVG.Length 0.221), stopColour "#832dc4" ] []
-                              , stop [ offset (SVG.Length 0.377), stopColour "#5e35b8" ] []
-                              , stop [ offset (SVG.Length 0.543), stopColour "#3f3dad" ] []
-                              , stop [ offset (SVG.Length 0.704), stopColour "#2942a6" ] []
-                              , stop [ offset (SVG.Length 0.857), stopColour "#1c45a2" ] []
-                              , stop [ offset (SVG.Length 0.994), stopColour "#1746a0" ] []
+          [ div [ classes [ aHorizontal, fullWidth ] ]
+              [ div [ classes [ ClassName "group", aHorizontal, ClassName "marlowe-title-group" ] ]
+                  [ div [ class_ (ClassName "marlowe-logo") ]
+                      [ svg [ SVG.width (SVG.Length 50.0), SVG.height (SVG.Length 41.628), SVG.viewBox (SVG.Box { x: 0, y: 0, width: 60, height: 42 }) ]
+                          [ defs []
+                              [ linearGradient [ id_ "marlowe__linear-gradient", x1 (SVG.Length 0.5), x2 (SVG.Length 0.5), y2 (SVG.Length 1.0), gradientUnits ObjectBoundingBox ]
+                                  [ stop [ offset (SVG.Length 0.221), stopColour "#832dc4" ] []
+                                  , stop [ offset (SVG.Length 0.377), stopColour "#5e35b8" ] []
+                                  , stop [ offset (SVG.Length 0.543), stopColour "#3f3dad" ] []
+                                  , stop [ offset (SVG.Length 0.704), stopColour "#2942a6" ] []
+                                  , stop [ offset (SVG.Length 0.857), stopColour "#1c45a2" ] []
+                                  , stop [ offset (SVG.Length 0.994), stopColour "#1746a0" ] []
+                                  ]
                               ]
+                          , path
+                              [ id_ "prefix__marlowe-logo"
+                              , d "M90.464 35.544c1.02 0 2.232.024 2.736.072V30.4a42.042 42.042 0 00-30.06 10.124c-8.88-7.68-20.784-10.992-29.916-9.96v4.884c.516-.036 1.308-.06 2.208-.06h.048l.156-.012.2.012a19.663 19.663 0 012.264.112h.1c12.324 1.488 21.984 7.212 28.7 17.556a236 236 0 00-3.792 6.3c-.756-1.236-2.832-5.04-3.672-6.444a44.98 44.98 0 012.028-3.06c-1.284-1.26-2.484-2.4-3.732-3.588-.9 1.116-1.62 1.992-2.412 2.964-3.36-2.28-6.576-4.476-10.392-5.628A29.291 29.291 0 0033.2 42.228v29.688h4.98V47.424c5.028.876 10.332 2.736 14.472 6.672a46.733 46.733 0 00-3.9 17.832h5.172a34.82 34.82 0 012.628-13.644 43.568 43.568 0 013.24 7.884 44.62 44.62 0 01.864 5.736h2.3v-8.268h.072a.77.77 0 11.84-.768.759.759 0 01-.684.768h.072V71.9h-.3l.072.012h.228V71.9h2.4a24.792 24.792 0 014.128-13.728 42.589 42.589 0 012.7 13.74h5.296c0-5.088-1.992-14.6-4.092-18.552a22.176 22.176 0 0114.244-5.616c0 4-.012 8 0 12.012.012 4.032-.084 8.076.072 12.144h5.2V42.144a35.632 35.632 0 00-12.012 1.512 33.507 33.507 0 00-10.468 5.664c-1.092-1.9-2.316-3.432-3.564-5.244a37.471 37.471 0 0120.892-8.46c.504-.048 1.392-.072 2.412-.072z"
+                              , transform (Translate { x: (negate 33.2), y: (negate 30.301) })
+                              ]
+                              []
                           ]
-                      , path
-                          [ id_ "prefix__marlowe-logo"
-                          , d "M90.464 35.544c1.02 0 2.232.024 2.736.072V30.4a42.042 42.042 0 00-30.06 10.124c-8.88-7.68-20.784-10.992-29.916-9.96v4.884c.516-.036 1.308-.06 2.208-.06h.048l.156-.012.2.012a19.663 19.663 0 012.264.112h.1c12.324 1.488 21.984 7.212 28.7 17.556a236 236 0 00-3.792 6.3c-.756-1.236-2.832-5.04-3.672-6.444a44.98 44.98 0 012.028-3.06c-1.284-1.26-2.484-2.4-3.732-3.588-.9 1.116-1.62 1.992-2.412 2.964-3.36-2.28-6.576-4.476-10.392-5.628A29.291 29.291 0 0033.2 42.228v29.688h4.98V47.424c5.028.876 10.332 2.736 14.472 6.672a46.733 46.733 0 00-3.9 17.832h5.172a34.82 34.82 0 012.628-13.644 43.568 43.568 0 013.24 7.884 44.62 44.62 0 01.864 5.736h2.3v-8.268h.072a.77.77 0 11.84-.768.759.759 0 01-.684.768h.072V71.9h-.3l.072.012h.228V71.9h2.4a24.792 24.792 0 014.128-13.728 42.589 42.589 0 012.7 13.74h5.296c0-5.088-1.992-14.6-4.092-18.552a22.176 22.176 0 0114.244-5.616c0 4-.012 8 0 12.012.012 4.032-.084 8.076.072 12.144h5.2V42.144a35.632 35.632 0 00-12.012 1.512 33.507 33.507 0 00-10.468 5.664c-1.092-1.9-2.316-3.432-3.564-5.244a37.471 37.471 0 0120.892-8.46c.504-.048 1.392-.072 2.412-.072z"
-                          , transform (Translate { x: (negate 33.2), y: (negate 30.301) })
-                          ]
-                          []
                       ]
+                  , h2 [ classes [ spaceLeft, uppercase, spaceRight ] ] [ text "Marlowe Playground" ]
                   ]
-              , h1 [ classes [ spaceLeft, uppercase, spaceRight ] ] [ text "Marlowe Playground" ]
-              , h2_ [ text (state ^. _projectName) ]
+              , h1 [ classes [ ClassName "project-title" ] ] [ text (state ^. _projectName) ]
+              , a [ href "./tutorial/index.html", target "_blank", classes [ ClassName "external-links" ] ] [ text "Tutorial" ]
               ]
-          , a [ href "./tutorial/index.html", target "_blank", classes [] ] [ text "Tutorial" ]
           ]
       , main []
-          [ globalActions (state ^. _view)
+          [ menuBar state
+          , globalActions (state ^. _view)
           , section [ id_ "main-panel" ]
               [ tabContents HomePage [ Home.render state ]
               , tabContents Simulation
@@ -646,9 +666,6 @@ render settings state =
   globalActions HaskellEditor =
     div [ class_ (ClassName "global-actions") ]
       [ div [ classes [ ClassName "group" ] ]
-          [ GistButtons.authButton state
-          ]
-      , div [ classes [ ClassName "group" ] ]
           [ renderSubmodule _haskellState HaskellAction HaskellEditor.editorOptions state
           , renderSubmodule _haskellState HaskellAction HaskellEditor.compileButton state
           ]
@@ -657,10 +674,6 @@ render settings state =
   globalActions Simulation =
     div [ class_ (ClassName "global-actions") ]
       [ div [ classes [ ClassName "group" ] ]
-          [ GistButtons.authButton state
-          , menuBar state
-          ]
-      , div [ classes [ ClassName "group" ] ]
           [ renderSubmodule _simulationState SimulationAction Simulation.editorOptions state
           , renderSubmodule _simulationState SimulationAction Simulation.sendToBlocklyButton state
           ]
@@ -670,16 +683,32 @@ render settings state =
 
   modal Nothing = []
 
-  modal (Just _) =
+  modal (Just view) =
     [ div [ classes [ ClassName "modal" ] ]
-        [ div [ classes [ ClassName "modal-content" ], onClick $ const $ Just CloseModal ]
-            [ text "hello" ]
+        [ div [ classes [ ClassName "modal-container" ], onClick $ const $ Just CloseModal ]
+            [ div [ classes [ ClassName "modal-content" ] ]
+                [ a [ class_ (ClassName "close"), onClick $ const $ Just CloseModal ] [ text "x" ]
+                , modalContent view
+                ]
+            ]
         ]
     ]
 
+  modalContent NewProject = renderSubmodule _newProject NewProjectAction NewProject.render state
+
+  modalContent OpenProject = renderSubmodule _projects ProjectsAction Project.render state
+
+  modalContent OpenDemo = text "OpenDemo"
+
+  modalContent RenameProject = text "RenameProject"
+
+  modalContent SaveProjectAs = text "SaveProjectAs"
+
+  modalContent GithubLogin = text "GithubLogin"
+
 menuBar :: forall p. FrontendState -> HTML p Action
 menuBar state =
-  div []
+  div [ classes [ ClassName "menu-bar" ] ]
     ( [ openModal NewProject "New Project"
       , openModal OpenProject "Open Project"
       , openModal OpenDemo "Open Demo"
@@ -691,10 +720,10 @@ menuBar state =
   where
   openModal modal name = a [ onClick $ const $ Just $ OpenModal modal ] [ text name ]
 
-  save Nothing = [ text "not logged in" ]
+  save Nothing = [ openModal GithubLogin "Save" ]
 
-  save _ = [ text "logged in" ]
+  save _ = [ a [ onClick $ const $ Just $ GistAction PublishGist ] [ text "Save" ] ]
 
-  saveAs Nothing = [ text "not logged in" ]
+  saveAs Nothing = [ openModal GithubLogin "Save As" ]
 
-  saveAs _ = [ text "logged in" ]
+  saveAs _ = [ openModal SaveProjectAs "Save As" ]

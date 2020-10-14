@@ -13,10 +13,33 @@ header {
   fill: url(#marlowe__linear-gradient) var(--primary-color);
 }
 
+.marlowe-title-group {
+  flex: 1;
+  justify-content: start;
+}
+
+.project-title {
+  flex: 1;
+  text-align: center;
+}
+
+.external-links {
+  flex: 1;
+  text-align: right;
+}
+
+.menu-bar {
+  display: flex;
+}
+
+.menu-bar a {
+  padding: 0rem 1rem;
+}
+
 .global-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding: 1em 1em;
   background-color: var(--bg-light);
   border-bottom: solid 1px var(--bg-dark);

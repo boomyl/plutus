@@ -34,6 +34,7 @@ import Router (Route)
 import Servant.PureScript.Ajax (AjaxError)
 import Simulation.Types as Simulation
 import Wallet as Wallet
+import Web.UIEvent.KeyboardEvent (KeyboardEvent)
 
 ------------------------------------------------------------
 data Query a
@@ -54,6 +55,7 @@ instance showModalView :: Show ModalView where
 
 data Action
   = Init
+  | HandleKey H.SubscriptionId KeyboardEvent
   -- Home Page
   | ShowHomePageInFuture Boolean
   -- Haskell Editor
@@ -86,6 +88,7 @@ data Action
 -- how to classify them.
 instance actionIsEvent :: IsEvent Action where
   toEvent Init = Just $ defaultEvent "Init"
+  toEvent (HandleKey _ _) = Just $ defaultEvent "HandleKey"
   toEvent (ShowHomePageInFuture b) = Just $ (defaultEvent "ShowHomePageInFuture") { label = Just (show b) }
   toEvent (HaskellAction action) = toEvent action
   toEvent (JSHandleEditorMessage _) = Just $ defaultEvent "JSHandleEditorMessage"
