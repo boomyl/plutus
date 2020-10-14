@@ -15,6 +15,7 @@ import Data.List.NonEmpty as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (unwrap)
+import Debug.Trace (trace)
 import Demos (handleAction) as Demos
 import Demos.Types (Action(..), Demo(..)) as Demos
 import Effect.Aff.Class (class MonadAff)
@@ -50,7 +51,7 @@ import Language.Haskell.Interpreter (_InterpreterResult)
 import Language.Haskell.Monaco as HM
 import Language.Javascript.Interpreter as JSI
 import LocalStorage as LocalStorage
-import Marlowe (SPParams_, getApiGistsByGistId)
+import Marlowe (SPParams_, getApiGists, getApiGistsByGistId)
 import Marlowe as Server
 import Marlowe.ActusBlockly as AMB
 import Marlowe.Blockly as MB
@@ -229,7 +230,7 @@ handleAction settings Init = do
   checkAuthStatus settings
 
 handleAction settings (HandleKey sid ev)
-  | KE.key ev == "Escape" = assign _showModal Nothing
+  | KE.key ev == "Escape" = trace "Handle Escape" \_ -> assign _showModal Nothing
   | otherwise = pure unit
 
 handleAction settings (ShowHomePageInFuture b) = do
@@ -414,13 +415,16 @@ handleAction settings CheckAuthStatus = do
 
 handleAction settings (GistAction subEvent) = handleGistAction settings subEvent
 
-handleAction settings (OpenModal OpenProject) = do
+handleAction settings (OpenModal OpenProject) = trace "OpenProject" \_ -> do
   assign _showModal $ Just OpenProject
   toProjects $ Projects.handleAction settings Projects.LoadProjects
+  -- assign (_projects <<< Projects._projects) Loading
+  -- resp <- flip runReaderT settings $ runExceptT getApiGists
+  -- assign (_projects <<< Projects._projects) $ lmap errorToString $ RemoteData.fromEither resp
 
 handleAction _ (OpenModal modal) = assign _showModal $ Just modal
 
-handleAction _ CloseModal = assign _showModal Nothing
+handleAction _ CloseModal = trace "CloseModal" \_ -> assign _showModal Nothing
 
 selectLanguageView :: Lang -> Maybe View
 selectLanguageView Haskell = Just HaskellEditor
