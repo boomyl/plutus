@@ -3,27 +3,26 @@ module JSEditor where
 import Data.Array as Array
 import Data.Enum (toEnum, upFromIncluding)
 import Data.Lens (to, view, (^.))
-import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.String (Pattern(..), split)
 import Data.String as String
 import Effect.Aff.Class (class MonadAff)
 import Examples.JS.Contracts as JSE
 import Halogen (ClassName(..), ComponentHTML, liftEffect)
-import Halogen.Classes (aHorizontal, activeClasses, analysisPanel, closeDrawerArrowIcon, codeEditor, collapsed, footerPanelBg, jFlexStart, minimizeIcon, panelSubHeader, panelSubHeaderMain, spaceLeft)
-import Halogen.HTML (HTML, a, button, code_, div, div_, img, li, option, pre_, section, select, slot, small_, text, ul)
+import Halogen.Classes (aHorizontal, analysisPanel, closeDrawerArrowIcon, codeEditor, collapsed, footerPanelBg, minimizeIcon)
+import Halogen.HTML (HTML, a, button, code_, div, div_, img, option, pre_, section, select, slot, text)
 import Halogen.HTML.Events (onClick, onSelectedIndexChange)
-import Halogen.HTML.Properties (alt, class_, classes, enabled, src)
+import Halogen.HTML.Properties (alt, class_, classes, src)
 import Halogen.HTML.Properties as HTML
 import Halogen.Monaco (monacoComponent)
 import Language.Javascript.Interpreter (CompilationError(..), InterpreterResult(..))
 import Language.Javascript.Monaco as JSM
 import LocalStorage as LocalStorage
 import Monaco as Monaco
-import Prelude (bind, bottom, const, eq, map, not, show, unit, ($), (<$>), (<<<), (<>), (==))
+import Prelude (bind, bottom, const, map, not, show, unit, ($), (<$>), (<<<), (<>), (==))
 import StaticData as StaticData
 import Text.Pretty (pretty)
-import Types (ChildSlots, FrontendState, Action(..), JSCompilationState(..), _activeJSDemo, _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _showBottomPanel, bottomPanelHeight)
+import Types (Action(..), ChildSlots, FrontendState, JSCompilationState(..), _jsCompilationResult, _jsEditorKeybindings, _jsEditorSlot, _showBottomPanel, bottomPanelHeight)
 
 render ::
   forall m.
@@ -39,37 +38,6 @@ render state =
     , bottomPanel state
     ]
 
--- [ section [ classes [ panelSubHeader, aHorizontal ] ]
---     [ div [ classes [ panelSubHeaderMain, aHorizontal ] ]
---         [ div [ classes [ ClassName "demo-title", aHorizontal, jFlexStart ] ]
---             [ div [ classes [ ClassName "demos", spaceLeft ] ]
---                 [ small_ [ text "Demos:" ]
---                 ]
---             ]
---         , ul [ classes [ ClassName "demo-list", aHorizontal ] ]
---             (demoScriptLink <$> Array.fromFoldable (Map.keys StaticData.demoFilesJS))
---         ]
---     , div [ class_ (ClassName "editor-options") ]
---         [ select
---             [ HTML.id_ "editor-options"
---             , class_ (ClassName "dropdown-header")
---             , onSelectedIndexChange (\idx -> JSSelectEditorKeyBindings <$> toEnum idx)
---             ]
---             (map keybindingItem (upFromIncluding bottom))
---         ]
---     ]
--- , section [ class_ (ClassName "code-panel") ]
---     [ div [ classes (codeEditor $ state ^. _showBottomPanel) ]
---         [ jsEditor state ]
---     ]
--- ]
--- where
--- keybindingItem item =
---   if state ^. _jsEditorKeybindings == item then
---     option [ class_ (ClassName "selected-item"), HTML.value (show item) ] [ text $ show item ]
---   else
---     option [ HTML.value (show item) ] [ text $ show item ]
--- demoScriptLink key = li [ state ^. _activeJSDemo <<< activeClasses (eq key) ] [ a [ onClick $ const $ Just $ LoadJSScript key ] [ text key ] ]
 otherActions :: forall p. FrontendState -> HTML p Action
 otherActions state =
   div [ classes [ ClassName "group" ] ]
