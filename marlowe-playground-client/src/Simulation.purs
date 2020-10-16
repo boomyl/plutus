@@ -22,13 +22,13 @@ import Data.NonEmptyList.Extra (tailIfNotEmpty)
 import Data.String (codePointFromChar)
 import Data.String as String
 import Data.Traversable (traverse)
-import Data.Tuple (Tuple(..), fst, snd)
+import Data.Tuple (Tuple(..), snd)
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import FileEvents (readFileFromDragEvent)
 import FileEvents as FileEvents
-import Halogen (ClassName(..), HalogenM, query)
-import Halogen.Classes (aHorizontal, activeClasses, bold, closeDrawerIcon, codeEditor, expanded, infoIcon, jFlexStart, noMargins, panelSubHeader, panelSubHeaderMain, panelSubHeaderSide, plusBtn, pointer, sidebarComposer, smallBtn, spaceLeft, spanText, textSecondaryColor, uppercase)
+import Halogen (HalogenM, query)
+import Halogen.Classes (aHorizontal, activeClasses, bold, closeDrawerIcon, codeEditor, expanded, infoIcon, noMargins, panelSubHeaderSide, plusBtn, pointer, sidebarComposer, smallBtn, spanText, textSecondaryColor, uppercase)
 import Halogen.Classes as Classes
 import Halogen.HTML (ClassName(..), ComponentHTML, HTML, a, article, aside, b_, br_, button, div, em_, h6, h6_, img, input, li, option, p, p_, section, select, slot, small, strong_, text, ul)
 import Halogen.HTML.Events (onClick, onSelectedIndexChange, onValueChange)
@@ -51,12 +51,13 @@ import Monaco (getModel, getMonaco, setTheme, setValue) as Monaco
 import Network.RemoteData (RemoteData(..))
 import Network.RemoteData as RemoteData
 import Prelude (class Show, Unit, Void, bind, bottom, const, discard, eq, flip, identity, mempty, pure, show, unit, zero, ($), (-), (/=), (<), (<$>), (<<<), (<>), (=<<), (==), (>), (>=))
+import Projects.Types (Lang(..))
 import Reachability (startReachabilityAnalysis)
 import Servant.PureScript.Ajax (AjaxError)
 import Servant.PureScript.Settings (SPSettings_)
 import Simulation.BottomPanel (bottomPanel)
 import Simulation.State (ActionInput(..), ActionInputId, _editorErrors, _editorWarnings, _moveToAction, _pendingInputs, _possibleActions, _slot, _state, applyInput, emptyMarloweState, hasHistory, mapPartiesActionInput, moveToSignificantSlot, moveToSlot, nextSignificantSlot, otherActionsParty, updateContractInState, updateMarloweState)
-import Simulation.Types (Action(..), AnalysisState(..), State, WebData, _activeDemo, _analysisState, _bottomPanelView, _currentContract, _currentMarloweState, _editorKeybindings, _helpContext, _marloweState, _oldContract, _selectedHole, _showBottomPanel, _showErrorDetail, _showRightPanel, isContractValid)
+import Simulation.Types (Action(..), AnalysisState(..), State, WebData, _activeDemo, _analysisState, _bottomPanelView, _currentContract, _currentMarloweState, _editorKeybindings, _helpContext, _marloweState, _oldContract, _selectedHole, _showBottomPanel, _showErrorDetail, _showRightPanel, _source, isContractValid)
 import StaticData (marloweBufferLocalStorageKey)
 import StaticData as StaticData
 import Text.Pretty (genericPretty, pretty)
@@ -211,6 +212,10 @@ handleAction _ (ShowErrorDetail val) = assign _showErrorDetail val
 
 handleAction _ SetBlocklyCode = pure unit
 
+handleAction _ EditHaskell = pure unit
+
+handleAction _ EditJavascript = pure unit
+
 handleAction settings AnalyseContract = do
   currContract <- use _currentContract
   currState <- use (_currentMarloweState <<< _state)
@@ -340,6 +345,24 @@ render state =
     li [ state ^. _activeDemo <<< activeClasses (eq key) ]
       [ a [ onClick $ const $ Just $ LoadScript key ] [ text key ] ]
 
+otherActions :: forall p. State -> HTML p Action
+otherActions state =
+  div [ classes [ ClassName "group" ] ]
+    ( [ editorOptions state
+      , sendToBlocklyButton state
+      ]
+        <> ( if state ^. (_source <<< to (eq Haskell)) then
+              [ haskellSourceButton state ]
+            else
+              []
+          )
+        <> ( if state ^. (_source <<< to (eq Javascript)) then
+              [ javascriptSourceButton state ]
+            else
+              []
+          )
+    )
+
 sendToBlocklyButton :: forall p. State -> HTML p Action
 sendToBlocklyButton state =
   button
@@ -347,9 +370,23 @@ sendToBlocklyButton state =
     , enabled isBlocklyEnabled
     , classes [ Classes.disabled (not isBlocklyEnabled) ]
     ]
-    [ text "Send To Blockly" ]
+    [ text "View in Blockly Editor" ]
   where
   isBlocklyEnabled = view (_marloweState <<< _Head <<< _editorErrors <<< to Array.null) state
+
+haskellSourceButton :: forall p. State -> HTML p Action
+haskellSourceButton state =
+  button
+    [ onClick $ const $ Just $ EditHaskell
+    ]
+    [ text "Edit Haskell Source" ]
+
+javascriptSourceButton :: forall p. State -> HTML p Action
+javascriptSourceButton state =
+  button
+    [ onClick $ const $ Just $ EditJavascript
+    ]
+    [ text "Edit Javascript Source" ]
 
 editorOptions :: forall p. State -> HTML p Action
 editorOptions state =

@@ -439,10 +439,6 @@ button.minus-btn:hover {
   padding-top: 1rem;
 }
 
-.editor-options {
-  margin: 0rem 1rem;
-}
-
 .editor-options select {
   width: 6rem;
 }

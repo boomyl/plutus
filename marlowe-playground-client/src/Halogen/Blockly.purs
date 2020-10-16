@@ -43,6 +43,9 @@ _generator = prop (SProxy :: SProxy "generator")
 _errorMessage :: Lens' BlocklyState (Maybe String)
 _errorMessage = prop (SProxy :: SProxy "errorMessage")
 
+emptyState :: BlocklyState
+emptyState = { blocklyState: Nothing, generator: Nothing, errorMessage: Nothing }
+
 data BlocklyQuery a
   = Resize a
   | SetCode String a
@@ -64,7 +67,7 @@ type DSL m a
 blockly :: forall m. MonadEffect m => String -> Array BlockDefinition -> Component HTML BlocklyQuery Unit BlocklyMessage m
 blockly rootBlockName blockDefinitions =
   mkComponent
-    { initialState: const { blocklyState: Nothing, generator: Nothing, errorMessage: Nothing }
+    { initialState: const emptyState
     , render
     , eval:
       H.mkEval
@@ -172,9 +175,14 @@ render state =
         , id_ "blocklyWorkspace"
         , classes [ ClassName "blockly-workspace", ClassName "container-fluid" ]
         ]
-        [ toCodeButton "Send To Simulator"
-        , errorMessage state.errorMessage
-        ]
+        [ otherActions state ]
+    ]
+
+otherActions :: forall p. BlocklyState -> HTML p BlocklyAction
+otherActions state =
+  div []
+    [ toCodeButton "Send To Simulator"
+    , errorMessage state.errorMessage
     ]
 
 toCodeButton :: forall p. String -> HTML p BlocklyAction

@@ -2,6 +2,7 @@
 module Simulation.Types where
 
 import Prelude
+
 import Analytics (class IsEvent, Event)
 import Analytics as A
 import Data.Array as Array
@@ -23,6 +24,7 @@ import Marlowe.Semantics (Bound, ChoiceId, ChosenNum, Contract, Input, Slot)
 import Marlowe.Semantics as S
 import Marlowe.Symbolic.Types.Response (Result)
 import Network.RemoteData (RemoteData)
+import Projects.Types (Lang(..))
 import Servant.PureScript.Ajax (AjaxError)
 import Simulation.State (MarloweState, _contract, _editorErrors, emptyMarloweState)
 import Text.Parsing.StringParser (Pos)
@@ -81,6 +83,7 @@ type State
     , analysisState :: AnalysisState
     , selectedHole :: Maybe String
     , oldContract :: Maybe String
+    , source :: Lang
     }
 
 _showRightPanel :: Lens' State Boolean
@@ -122,6 +125,9 @@ _selectedHole = prop (SProxy :: SProxy "selectedHole")
 _oldContract :: Lens' State (Maybe String)
 _oldContract = prop (SProxy :: SProxy "oldContract")
 
+_source :: Lens' State Lang
+_source = prop (SProxy :: SProxy "source")
+
 mkState :: State
 mkState =
   { showRightPanel: true
@@ -135,6 +141,7 @@ mkState =
   , analysisState: NoneAsked
   , selectedHole: Nothing
   , oldContract: Nothing
+  , source: Marlowe
   }
 
 isContractValid :: State -> Boolean
@@ -168,8 +175,10 @@ data Action
   | ShowRightPanel Boolean
   | ShowBottomPanel Boolean
   | ShowErrorDetail Boolean
-  -- Blockly
+  -- Editors
   | SetBlocklyCode
+  | EditHaskell
+  | EditJavascript
   -- websocket
   | AnalyseContract
   | AnalyseReachabilityContract
@@ -202,6 +211,8 @@ instance isEventAction :: IsEvent Action where
   toEvent (ShowBottomPanel _) = Just $ defaultEvent "ShowBottomPanel"
   toEvent (ShowErrorDetail _) = Just $ defaultEvent "ShowErrorDetail"
   toEvent SetBlocklyCode = Just $ defaultEvent "SetBlocklyCode"
+  toEvent EditHaskell = Just $ defaultEvent "EditHaskell"
+  toEvent EditJavascript = Just $ defaultEvent "EditJavascript"
   toEvent AnalyseContract = Just $ defaultEvent "AnalyseContract"
   toEvent AnalyseReachabilityContract = Just $ defaultEvent "AnalyseReachabilityContract"
   toEvent Save = Just $ defaultEvent "Save"

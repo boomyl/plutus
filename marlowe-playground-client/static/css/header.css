@@ -47,15 +47,15 @@ header {
 
 .menu-bar a {
   padding: 0rem 1rem;
+  font-weight: bold;
 }
 
 .global-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   padding: 1em 1em;
   background-color: var(--bg-light);
-  border-bottom: solid 1px var(--bg-dark);
 }
 
 .global-actions h2 {
@@ -81,4 +81,9 @@ header {
 .global-actions .group {
   display: flex;
   align-items: center;
+}
+
+.global-actions .group button {
+  margin-left: 1em;
+  padding: 0rem 1rem;
 }

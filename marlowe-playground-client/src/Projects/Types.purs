@@ -17,6 +17,8 @@ data Lang
   | Javascript
   | Blockly
 
+derive instance eqLang :: Eq Lang
+
 derive instance genericLang :: Generic Lang _
 
 instance showLang :: Show Lang where

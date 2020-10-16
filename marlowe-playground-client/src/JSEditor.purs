@@ -29,40 +29,70 @@ render ::
   forall m.
   MonadAff m =>
   FrontendState ->
-  Array (ComponentHTML Action ChildSlots m)
+  ComponentHTML Action ChildSlots m
 render state =
-  [ section [ classes [ panelSubHeader, aHorizontal ] ]
-      [ div [ classes [ panelSubHeaderMain, aHorizontal ] ]
-          [ div [ classes [ ClassName "demo-title", aHorizontal, jFlexStart ] ]
-              [ div [ classes [ ClassName "demos", spaceLeft ] ]
-                  [ small_ [ text "Demos:" ]
-                  ]
-              ]
-          , ul [ classes [ ClassName "demo-list", aHorizontal ] ]
-              (demoScriptLink <$> Array.fromFoldable (Map.keys StaticData.demoFilesJS))
-          ]
-      , div [ class_ (ClassName "editor-options") ]
-          [ select
-              [ HTML.id_ "editor-options"
-              , class_ (ClassName "dropdown-header")
-              , onSelectedIndexChange (\idx -> JSSelectEditorKeyBindings <$> toEnum idx)
-              ]
-              (map keybindingItem (upFromIncluding bottom))
-          ]
-      ]
-  , section [ class_ (ClassName "code-panel") ]
-      [ div [ classes (codeEditor $ state ^. _showBottomPanel) ]
-          [ jsEditor state ]
-      ]
-  ]
+  div_
+    [ section [ class_ (ClassName "code-panel") ]
+        [ div [ classes (codeEditor $ state ^. _showBottomPanel) ]
+            [ jsEditor state ]
+        ]
+    , bottomPanel state
+    ]
+
+-- [ section [ classes [ panelSubHeader, aHorizontal ] ]
+--     [ div [ classes [ panelSubHeaderMain, aHorizontal ] ]
+--         [ div [ classes [ ClassName "demo-title", aHorizontal, jFlexStart ] ]
+--             [ div [ classes [ ClassName "demos", spaceLeft ] ]
+--                 [ small_ [ text "Demos:" ]
+--                 ]
+--             ]
+--         , ul [ classes [ ClassName "demo-list", aHorizontal ] ]
+--             (demoScriptLink <$> Array.fromFoldable (Map.keys StaticData.demoFilesJS))
+--         ]
+--     , div [ class_ (ClassName "editor-options") ]
+--         [ select
+--             [ HTML.id_ "editor-options"
+--             , class_ (ClassName "dropdown-header")
+--             , onSelectedIndexChange (\idx -> JSSelectEditorKeyBindings <$> toEnum idx)
+--             ]
+--             (map keybindingItem (upFromIncluding bottom))
+--         ]
+--     ]
+-- , section [ class_ (ClassName "code-panel") ]
+--     [ div [ classes (codeEditor $ state ^. _showBottomPanel) ]
+--         [ jsEditor state ]
+--     ]
+-- ]
+-- where
+-- keybindingItem item =
+--   if state ^. _jsEditorKeybindings == item then
+--     option [ class_ (ClassName "selected-item"), HTML.value (show item) ] [ text $ show item ]
+--   else
+--     option [ HTML.value (show item) ] [ text $ show item ]
+-- demoScriptLink key = li [ state ^. _activeJSDemo <<< activeClasses (eq key) ] [ a [ onClick $ const $ Just $ LoadJSScript key ] [ text key ] ]
+otherActions :: forall p. FrontendState -> HTML p Action
+otherActions state =
+  div [ classes [ ClassName "group" ] ]
+    [ editorOptions state
+    , compileButton state
+    ]
+
+editorOptions :: forall p. FrontendState -> HTML p Action
+editorOptions state =
+  div [ class_ (ClassName "editor-options") ]
+    [ select
+        [ HTML.id_ "editor-options"
+        , class_ (ClassName "dropdown-header")
+        , onSelectedIndexChange (\idx -> JSSelectEditorKeyBindings <$> toEnum idx)
+        ]
+        (map keybindingItem (upFromIncluding bottom))
+    ]
   where
   keybindingItem item =
     if state ^. _jsEditorKeybindings == item then
       option [ class_ (ClassName "selected-item"), HTML.value (show item) ] [ text $ show item ]
     else
       option [ HTML.value (show item) ] [ text $ show item ]
-
-  demoScriptLink key = li [ state ^. _activeJSDemo <<< activeClasses (eq key) ] [ a [ onClick $ const $ Just $ LoadJSScript key ] [ text key ] ]
 
 jsEditor ::
   forall m.
@@ -105,12 +135,10 @@ bottomPanel state =
                     [ classes ([ ClassName "panel-tab", aHorizontal, ClassName "js-buttons" ])
                     ]
                     ( case view _jsCompilationResult state of
-                        JSCompiling -> [ button [ enabled false, classes [ ClassName "disabled" ] ] [ text "Compiling..." ] ]
                         JSCompiledSuccessfully _ ->
-                          [ button [ onClick $ const $ Just CompileJSProgram ] [ text "Compile" ]
-                          , button [ onClick $ const $ Just SendResultJSToSimulator ] [ text "Send To Simulator" ]
+                          [ button [ onClick $ const $ Just SendResultJSToSimulator ] [ text "Send To Simulator" ]
                           ]
-                        _ -> [ button [ onClick $ const $ Just CompileJSProgram ] [ text "Compile" ] ]
+                        _ -> []
                     )
                 ]
             ]
@@ -122,6 +150,13 @@ bottomPanel state =
     ]
   where
   showingBottomPanel = state ^. _showBottomPanel
+
+compileButton :: forall p. FrontendState -> HTML p Action
+compileButton state = button [ onClick $ const $ Just CompileJSProgram ] [ text (if state ^. _jsCompilationResult <<< to isLoading then "Compiling..." else "Compile") ]
+  where
+  isLoading JSCompiling = true
+
+  isLoading _ = false
 
 resultPane :: forall p. FrontendState -> Array (HTML p Action)
 resultPane state =
